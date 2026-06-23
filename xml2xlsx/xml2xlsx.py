@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 import sys
 import os
 import re
-from format_excel import format_ppi_bold
+from xml2xlsx.format_excel import format_ppi_bold
 import numpy as np
 
 
@@ -175,13 +175,20 @@ def extract_paragraphs(xml_path):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'INTRODD{suffix}_text'] = clean_text(''.join(introdd.itertext()))
             
+            # Get all INTRODD attributes
+            props = introdd.attrib
+            for key, value in props.items():
+                row[f'INTRODD{suffix}_{key}'] = value
+            
             # --- INTRODD EXPANSION ---
             expansions = introdd.findall('EXPANSION')
             for j, exp in enumerate(expansions):
                 exp_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_text'] = clean_text(''.join(exp.itertext()))
-                row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_constr'] = exp.get('constr')
-                row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_type'] = exp.get('type')
+                # Get all EXPANSION attributes
+                props = exp.attrib
+                for key, value in props.items():
+                    row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_{key}'] = value
             if not expansions:
                 row[f'INTRODD{suffix}_EXPANSION_text'] = None
                 row[f'INTRODD{suffix}_EXPANSION_constr'] = None
@@ -192,6 +199,10 @@ def extract_paragraphs(xml_path):
             for j, mod in enumerate(mods):
                 mod_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_MOD{mod_suffix}_text'] = clean_text(''.join(mod.itertext()))
+                # Get all MOD attributes
+                props = mod.attrib
+                for key, value in props.items():
+                    row[f'INTRODD{suffix}_MOD{mod_suffix}_{key}'] = value
             if not mods:
                 row[f'INTRODD{suffix}_MOD_text'] = None
             
@@ -200,15 +211,20 @@ def extract_paragraphs(xml_path):
             for j, vdd in enumerate(vdds):
                 vdd_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_VDD{vdd_suffix}_text'] = clean_text(''.join(vdd.itertext()))
-                row[f'INTRODD{suffix}_VDD{vdd_suffix}_type'] = vdd.get('type')
+                # Get all VDD attributes
+                props = vdd.attrib
+                for key, value in props.items():
+                    row[f'INTRODD{suffix}_VDD{vdd_suffix}_{key}'] = value
                 
                 # --- VDD EXPANSION ---
                 vdd_expansions = vdd.findall('EXPANSION')
                 for k, exp in enumerate(vdd_expansions):
                     vdd_exp_suffix = '' if k == 0 else f'_{k+1}'
                     row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_text'] = clean_text(''.join(exp.itertext()))
-                    row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_constr'] = exp.get('constr')
-                    row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_type'] = exp.get('type')
+                    # Get all VDD EXPANSION attributes
+                    props = exp.attrib
+                    for key, value in props.items():
+                        row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_{key}'] = value
                 if not vdd_expansions:
                     row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION_text'] = None
                     row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION_constr'] = None
@@ -240,14 +256,20 @@ def extract_paragraphs(xml_path):
         for i, ppi in enumerate(ppis):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'PPI{suffix}_text'] = clean_text(''.join(ppi.itertext()))
-            row[f'PPI{suffix}_decl'] = ppi.get('decl')
-            row[f'PPI{suffix}_type'] = ppi.get('type')
+            props = ppi.attrib
+            for key,value in props.items():
+                row[f'PPI{suffix}_{key}'] = value
+
             
             # --- MD in PPI (multiple) ---
             mds_in_ppi = ppi.findall('MD')
             for j, md in enumerate(mds_in_ppi):
                 md_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'PPI{suffix}_MD{md_suffix}_text'] = clean_text(''.join(md.itertext()))
+                # Get all MD attributes inside PPI
+                props = md.attrib
+                for key, value in props.items():
+                    row[f'PPI{suffix}_MD{md_suffix}_{key}'] = value
             if not mds_in_ppi:
                 row[f'PPI{suffix}_MD_text'] = None
         
@@ -262,6 +284,10 @@ def extract_paragraphs(xml_path):
         for i, nonppi in enumerate(nonppis):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'NONPPI{suffix}_text'] = clean_text(''.join(nonppi.itertext()))
+            # Get all NONPPI attributes
+            props = nonppi.attrib
+            for key, value in props.items():
+                row[f'NONPPI{suffix}_{key}'] = value
         if not nonppis:
             row['NONPPI_text'] = None
 
@@ -270,6 +296,10 @@ def extract_paragraphs(xml_path):
         for i, md in enumerate(standalone_mds):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'MD{suffix}_text'] = clean_text(''.join(md.itertext()))
+            # Get all standalone MD attributes
+            props = md.attrib
+            for key, value in props.items():
+                row[f'MD{suffix}_{key}'] = value
         if not standalone_mds:
             row['MD_text'] = None
 
@@ -278,6 +308,10 @@ def extract_paragraphs(xml_path):
         for i, app in enumerate(apps):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'APP{suffix}_text'] = clean_text(''.join(app.itertext()))
+            # Get all APP attributes
+            props = app.attrib
+            for key, value in props.items():
+                row[f'APP{suffix}_{key}'] = value
         if not apps:
             row['APP_text'] = None
 
@@ -286,9 +320,9 @@ def extract_paragraphs(xml_path):
     return rows
 
 
-if __name__ == '__main__':
+def main():
     if len(sys.argv) < 2:
-        print("Usage: python xml2xlsx.py <xml_file_or_folder> [output_file] [ignore_multi_ppi=true|false]")
+        print("Usage: xml2xlsx <xml_file_or_folder> [output_file] [ignore_multi_ppi=true|false]")
         sys.exit(1)
 
     input_path = sys.argv[1]
@@ -380,3 +414,7 @@ if __name__ == '__main__':
         print(f"Saved master file to {output_file}")
     else:
         print("No data extracted from input")
+
+
+if __name__ == '__main__':
+    main()

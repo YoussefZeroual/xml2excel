@@ -1,0 +1,11 @@
+pyproject.toml
+xml2xlsx/__init__.py
+xml2xlsx/format_excel.py
+xml2xlsx/gui.py
+xml2xlsx/xml2xlsx.py
+xml2xlsx_lidilem.egg-info/PKG-INFO
+xml2xlsx_lidilem.egg-info/SOURCES.txt
+xml2xlsx_lidilem.egg-info/dependency_links.txt
+xml2xlsx_lidilem.egg-info/entry_points.txt
+xml2xlsx_lidilem.egg-info/requires.txt
+xml2xlsx_lidilem.egg-info/top_level.txt

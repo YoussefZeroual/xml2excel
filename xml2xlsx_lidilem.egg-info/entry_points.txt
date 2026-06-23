@@ -1,0 +1,3 @@
+[console_scripts]
+xml2xlsx = xml2xlsx.xml2xlsx:main
+xml2xlsx-gui = xml2xlsx.gui:main
