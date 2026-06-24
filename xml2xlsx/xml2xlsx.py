@@ -25,12 +25,14 @@ PRESERVE_TAGS = ['INTRODD', 'VDD', 'EXPANSION', 'MOD', 'PPI', 'NONPPI', 'MD', 'A
 
 
 def serialize_paragraph(p_elem):
-    """Rebuild paragraph text preserving XML tags as literal text."""
+    """Rebuild paragraph text preserving XML tags (with attributes) as literal text."""
     def _serialize(elem):
         result = ''
         tag = elem.tag
         if tag != 'p':
-            result += f'<{tag}>'
+            # Reconstruct opening tag WITH attributes
+            attrs = ''.join(f' {k}="{v}"' for k, v in elem.attrib.items())
+            result += f'<{tag}{attrs}>'
         if elem.text:
             result += elem.text
         for child in elem:
@@ -154,7 +156,7 @@ def get_introdd_position_dd(paragraph_text, ignore_multi_ppi=True):
     return None
 
 
-def extract_paragraphs(xml_path):
+def extract_paragraphs(xml_path, compute_position=False):
     tree = ET.parse(xml_path)
     root = tree.getroot()
     rows = []
@@ -185,7 +187,6 @@ def extract_paragraphs(xml_path):
             for j, exp in enumerate(expansions):
                 exp_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_text'] = clean_text(''.join(exp.itertext()))
-                # Get all EXPANSION attributes
                 props = exp.attrib
                 for key, value in props.items():
                     row[f'INTRODD{suffix}_EXPANSION{exp_suffix}_{key}'] = value
@@ -199,7 +200,6 @@ def extract_paragraphs(xml_path):
             for j, mod in enumerate(mods):
                 mod_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_MOD{mod_suffix}_text'] = clean_text(''.join(mod.itertext()))
-                # Get all MOD attributes
                 props = mod.attrib
                 for key, value in props.items():
                     row[f'INTRODD{suffix}_MOD{mod_suffix}_{key}'] = value
@@ -211,7 +211,6 @@ def extract_paragraphs(xml_path):
             for j, vdd in enumerate(vdds):
                 vdd_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'INTRODD{suffix}_VDD{vdd_suffix}_text'] = clean_text(''.join(vdd.itertext()))
-                # Get all VDD attributes
                 props = vdd.attrib
                 for key, value in props.items():
                     row[f'INTRODD{suffix}_VDD{vdd_suffix}_{key}'] = value
@@ -221,7 +220,6 @@ def extract_paragraphs(xml_path):
                 for k, exp in enumerate(vdd_expansions):
                     vdd_exp_suffix = '' if k == 0 else f'_{k+1}'
                     row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_text'] = clean_text(''.join(exp.itertext()))
-                    # Get all VDD EXPANSION attributes
                     props = exp.attrib
                     for key, value in props.items():
                         row[f'INTRODD{suffix}_VDD{vdd_suffix}_EXPANSION{vdd_exp_suffix}_{key}'] = value
@@ -249,7 +247,8 @@ def extract_paragraphs(xml_path):
             row['INTRODD_VDD_EXPANSION_type'] = None
 
         # --- POSITION_INTRODD ---
-        row['POSITION_INTRODD'] = get_introdd_position(p)
+        if compute_position:
+            row['POSITION_INTRODD'] = get_introdd_position(p)
 
         # --- All PPIs (multiple MD in each PPI) ---
         ppis = p.findall('PPI')
@@ -257,16 +256,14 @@ def extract_paragraphs(xml_path):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'PPI{suffix}_text'] = clean_text(''.join(ppi.itertext()))
             props = ppi.attrib
-            for key,value in props.items():
+            for key, value in props.items():
                 row[f'PPI{suffix}_{key}'] = value
 
-            
             # --- MD in PPI (multiple) ---
             mds_in_ppi = ppi.findall('MD')
             for j, md in enumerate(mds_in_ppi):
                 md_suffix = '' if j == 0 else f'_{j+1}'
                 row[f'PPI{suffix}_MD{md_suffix}_text'] = clean_text(''.join(md.itertext()))
-                # Get all MD attributes inside PPI
                 props = md.attrib
                 for key, value in props.items():
                     row[f'PPI{suffix}_MD{md_suffix}_{key}'] = value
@@ -284,7 +281,6 @@ def extract_paragraphs(xml_path):
         for i, nonppi in enumerate(nonppis):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'NONPPI{suffix}_text'] = clean_text(''.join(nonppi.itertext()))
-            # Get all NONPPI attributes
             props = nonppi.attrib
             for key, value in props.items():
                 row[f'NONPPI{suffix}_{key}'] = value
@@ -296,7 +292,6 @@ def extract_paragraphs(xml_path):
         for i, md in enumerate(standalone_mds):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'MD{suffix}_text'] = clean_text(''.join(md.itertext()))
-            # Get all standalone MD attributes
             props = md.attrib
             for key, value in props.items():
                 row[f'MD{suffix}_{key}'] = value
@@ -308,7 +303,6 @@ def extract_paragraphs(xml_path):
         for i, app in enumerate(apps):
             suffix = '' if i == 0 else f'_{i+1}'
             row[f'APP{suffix}_text'] = clean_text(''.join(app.itertext()))
-            # Get all APP attributes
             props = app.attrib
             for key, value in props.items():
                 row[f'APP{suffix}_{key}'] = value
@@ -320,39 +314,71 @@ def extract_paragraphs(xml_path):
     return rows
 
 
+def reorder_columns(df):
+    """Reorder columns to reflect XML hierarchy."""
+    PRIORITY = [
+        'source_file',
+        'p_id',
+        'paragraph_text',
+        'POSITION_INTRODD',
+        'POSITION_INTRODD_DD',
+        'INTRODD',
+        'PPI',
+        'NONPPI',
+        'MD',
+        'APP',
+    ]
+
+    def sort_key(col):
+        for i, prefix in enumerate(PRIORITY):
+            if col == prefix or col.startswith(prefix + '_'):
+                return (i, col)
+        return (len(PRIORITY), col)
+
+    ordered = sorted(df.columns, key=sort_key)
+    return df[ordered]
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: xml2xlsx <xml_file_or_folder> [output_file] [ignore_multi_ppi=true|false]")
-        sys.exit(1)
+    import argparse
 
-    input_path = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Convert annotated XML to Excel")
+    parser.add_argument('input', help=".xml file, folder, or .xlsx file")
+    parser.add_argument('output', nargs='?', help="Output file (optional)")
+    parser.add_argument(
+        '--ignore-multi-ppi', dest='ignore_multi_ppi',
+        default=True, action=argparse.BooleanOptionalAction,
+        help="Ignore paragraphs with multiple PPIs for POSITION_INTRODD_DD (default: True)"
+    )
+    parser.add_argument(
+        '--position', dest='compute_position',
+        default=False, action='store_true',
+        help="Compute POSITION_INTRODD and POSITION_INTRODD_DD columns (default: off)"
+    )
+    args = parser.parse_args()
 
-    # argv[3]: ignore_multi_ppi flag (default True; pass 'false' to disable)
-    ignore_multi_ppi = True
-    if len(sys.argv) >= 4:
-        flag = sys.argv[3].strip().lower()
-        if flag == 'false':
-            ignore_multi_ppi = False
-        elif flag == 'true':
-            ignore_multi_ppi = True
-        else:
-            print(f"Warning: unrecognized value '{sys.argv[3]}' for ignore_multi_ppi — defaulting to True")
+    input_path = args.input
+    ignore_multi_ppi = args.ignore_multi_ppi
+    compute_position = args.compute_position
+
     print(f"[config] ignore_multi_ppi = {ignore_multi_ppi}")
+    print(f"[config] compute_position = {compute_position}")
+
     all_rows = []
 
     if os.path.isfile(input_path) and input_path.endswith('.xml'):
-        rows = extract_paragraphs(input_path)
+        rows = extract_paragraphs(input_path, compute_position)
         for row in rows:
             row['source_file'] = os.path.basename(input_path)
         all_rows = rows
-        output_file = input_path.replace(".xml", ".xlsx")
+        output_file = args.output or input_path.replace(".xml", ".xlsx")
 
     elif os.path.isdir(input_path):
-        output_file = os.path.join(input_path, "master_output.xlsx")
+        output_file = args.output or os.path.join(input_path, "master_output.xlsx")
         for f in sorted(os.listdir(input_path)):
             if f.endswith('.xml'):
                 file_path = os.path.join(input_path, f)
-                rows = extract_paragraphs(file_path)
+                rows = extract_paragraphs(file_path, compute_position)
                 if rows:
                     individual_df = pd.DataFrame(rows)
                     individual_df = individual_df.replace('', np.nan)
@@ -361,13 +387,17 @@ def main():
                     individual_df[text_cols] = individual_df[text_cols].apply(
                         lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v)
                     )
-                    individual_output = file_path.replace(".xml", ".xlsx")
-                    if 'paragraph_text_dd' in individual_df.columns:
+                    if compute_position and 'paragraph_text_dd' in individual_df.columns:
                         pos = individual_df.columns.get_loc('paragraph_text_dd') + 1
-                        individual_df.insert(pos, 'POSITION_INTRODD_DD',
-                                             individual_df['paragraph_text_dd'].map(
-                                                 lambda t: get_introdd_position_dd(t, ignore_multi_ppi),
-                                                 na_action='ignore'))
+                        individual_df.insert(
+                            pos, 'POSITION_INTRODD_DD',
+                            individual_df['paragraph_text_dd'].map(
+                                lambda t: get_introdd_position_dd(t, ignore_multi_ppi),
+                                na_action='ignore'
+                            )
+                        )
+                    individual_df = reorder_columns(individual_df)
+                    individual_output = file_path.replace(".xml", ".xlsx")
                     format_ppi_bold(individual_df, individual_output)
                     print(f"Saved individual file: {individual_output}")
                 for row in rows:
@@ -375,17 +405,26 @@ def main():
                 all_rows.extend(rows)
 
     elif os.path.isfile(input_path) and input_path.endswith('.xlsx'):
+        if not compute_position:
+            print("Pass --position to recompute POSITION_INTRODD_DD on an existing xlsx.")
+            sys.exit(0)
         df = pd.read_excel(input_path)
         if 'paragraph_text_dd' not in df.columns:
             print("Error: column 'paragraph_text_dd' not found in the xlsx file.")
             sys.exit(1)
         if 'POSITION_INTRODD_DD' in df.columns:
             df['POSITION_INTRODD_DD'] = df['paragraph_text_dd'].map(
-                lambda t: get_introdd_position_dd(t, ignore_multi_ppi), na_action='ignore')
+                lambda t: get_introdd_position_dd(t, ignore_multi_ppi), na_action='ignore'
+            )
         else:
             pos = df.columns.get_loc('paragraph_text_dd') + 1
-            df.insert(pos, 'POSITION_INTRODD_DD', df['paragraph_text_dd'].map(
-                lambda t: get_introdd_position_dd(t, ignore_multi_ppi), na_action='ignore'))
+            df.insert(
+                pos, 'POSITION_INTRODD_DD',
+                df['paragraph_text_dd'].map(
+                    lambda t: get_introdd_position_dd(t, ignore_multi_ppi), na_action='ignore'
+                )
+            )
+        df = reorder_columns(df)
         format_ppi_bold(df, input_path)
         print(f"Updated {input_path}")
         sys.exit(0)
@@ -404,17 +443,23 @@ def main():
         )
         df = df.replace('', np.nan)
         df.dropna(axis=1, how='all', inplace=True)
-        if 'paragraph_text_dd' in df.columns:
+        if compute_position and 'paragraph_text_dd' in df.columns:
             pos = df.columns.get_loc('paragraph_text_dd') + 1
-            df.insert(pos, 'POSITION_INTRODD_DD',
-                      df['paragraph_text_dd'].map(
-                          lambda t: get_introdd_position_dd(t, ignore_multi_ppi),
-                          na_action='ignore'))
+            df.insert(
+                pos, 'POSITION_INTRODD_DD',
+                df['paragraph_text_dd'].map(
+                    lambda t: get_introdd_position_dd(t, ignore_multi_ppi),
+                    na_action='ignore'
+                )
+            )
+        df = reorder_columns(df)
         format_ppi_bold(df, output_file)
         print(f"Saved master file to {output_file}")
     else:
         print("No data extracted from input")
 
 
+if __name__ == '__main__':
+    main()
 if __name__ == '__main__':
     main()

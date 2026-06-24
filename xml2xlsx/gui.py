@@ -62,6 +62,13 @@ class App(tk.Tk):
         )
         self.cb_master.grid(row=2, column=0, sticky="w")
 
+        self.compute_position = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            opt_frame,
+            text="Calculer les colonnes POSITION_INTRODD et POSITION_INTRODD_DD",
+            variable=self.compute_position
+        ).grid(row=3, column=0, sticky="w")
+
         # ── Lancer ────────────────────────────────────────────────────────
         self.run_btn = ttk.Button(self, text="▶  Lancer la conversion", command=self._run)
         self.run_btn.grid(row=3, column=0, columnspan=3, pady=(0, 10))
@@ -88,7 +95,6 @@ class App(tk.Tk):
 
     def _update_mode(self):
         mode = self.mode.get()
-        # Activer/désactiver les checkboxes selon le mode
         folder_only = mode == "dossier"
         state = "normal" if folder_only else "disabled"
         self.cb_individual.configure(state=state)
@@ -134,37 +140,43 @@ class App(tk.Tk):
         try:
             from xml2xlsx.xml2xlsx import (
                 extract_paragraphs, get_introdd_position_dd,
-                NO_LOWER
+                reorder_columns, NO_LOWER
             )
             from xml2xlsx.format_excel import format_ppi_bold
             import pandas as pd
             import numpy as np
 
             ignore_multi = self.ignore_multi_ppi.get()
+            compute_position = self.compute_position.get()
             mode = self.mode.get()
 
             self._log(f"[config] ignore_multi_ppi = {ignore_multi}")
+            self._log(f"[config] compute_position = {compute_position}")
 
             # ── Fichier XML unique ─────────────────────────────────────────
             if mode == "xml":
-                rows = extract_paragraphs(path)
+                rows = extract_paragraphs(path, compute_position)
                 for row in rows:
                     row['source_file'] = os.path.basename(path)
                 df = pd.DataFrame(rows)
                 df = df.replace('', np.nan)
                 df.dropna(axis=1, how='all', inplace=True)
-                if 'paragraph_text_dd' in df.columns:
+                if compute_position and 'paragraph_text_dd' in df.columns:
                     pos = df.columns.get_loc('paragraph_text_dd') + 1
                     df.insert(pos, 'POSITION_INTRODD_DD',
                               df['paragraph_text_dd'].map(
                                   lambda t: get_introdd_position_dd(t, ignore_multi),
                                   na_action='ignore'))
+                df = reorder_columns(df)
                 out = path.replace(".xml", ".xlsx")
                 format_ppi_bold(df, out)
                 self._log(f"✔ Fichier sauvegardé : {out}")
 
             # ── Fichier XLSX (recalcul) ───────────────────────────────────
             elif mode == "xlsx":
+                if not compute_position:
+                    self._log("⚠ Cochez 'Calculer les positions' pour recalculer POSITION_INTRODD_DD.")
+                    return
                 df = pd.read_excel(path)
                 if 'paragraph_text_dd' not in df.columns:
                     self._log("✘ Erreur : colonne 'paragraph_text_dd' introuvable.")
@@ -176,6 +188,7 @@ class App(tk.Tk):
                     pos = df.columns.get_loc('paragraph_text_dd') + 1
                     df.insert(pos, 'POSITION_INTRODD_DD', df['paragraph_text_dd'].map(
                         lambda t: get_introdd_position_dd(t, ignore_multi), na_action='ignore'))
+                df = reorder_columns(df)
                 format_ppi_bold(df, path)
                 self._log(f"✔ Fichier mis à jour : {path}")
 
@@ -190,7 +203,7 @@ class App(tk.Tk):
                 for f in xml_files:
                     file_path = os.path.join(path, f)
                     self._log(f"  → Traitement : {f}")
-                    rows = extract_paragraphs(file_path)
+                    rows = extract_paragraphs(file_path, compute_position)
                     if rows:
                         individual_df = pd.DataFrame(rows)
                         individual_df = individual_df.replace('', np.nan)
@@ -200,12 +213,13 @@ class App(tk.Tk):
                         individual_df[text_cols] = individual_df[text_cols].apply(
                             lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v)
                         )
-                        if 'paragraph_text_dd' in individual_df.columns:
+                        if compute_position and 'paragraph_text_dd' in individual_df.columns:
                             pos = individual_df.columns.get_loc('paragraph_text_dd') + 1
                             individual_df.insert(pos, 'POSITION_INTRODD_DD',
                                                  individual_df['paragraph_text_dd'].map(
                                                      lambda t: get_introdd_position_dd(t, ignore_multi),
                                                      na_action='ignore'))
+                        individual_df = reorder_columns(individual_df)
                         if self.save_individual.get():
                             individual_out = file_path.replace(".xml", ".xlsx")
                             format_ppi_bold(individual_df, individual_out)
@@ -225,12 +239,13 @@ class App(tk.Tk):
                     )
                     df = df.replace('', np.nan)
                     df.dropna(axis=1, how='all', inplace=True)
-                    if 'paragraph_text_dd' in df.columns:
+                    if compute_position and 'paragraph_text_dd' in df.columns:
                         pos = df.columns.get_loc('paragraph_text_dd') + 1
                         df.insert(pos, 'POSITION_INTRODD_DD',
                                   df['paragraph_text_dd'].map(
                                       lambda t: get_introdd_position_dd(t, ignore_multi),
                                       na_action='ignore'))
+                    df = reorder_columns(df)
                     master_out = os.path.join(path, "master_output.xlsx")
                     format_ppi_bold(df, master_out)
                     self._log(f"✔ Fichier maître : {master_out}")

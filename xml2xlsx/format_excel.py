@@ -22,11 +22,8 @@ TAG_COLOR_DEFAULT = '#000000'  # black for unknown tags
 
 
 def _parse_tagged_text(text):
-    """
-    Parse a string containing XML-like tags and return a list of segments:
-    [{'type': 'text'|'open_tag'|'close_tag', 'value': str, 'tag': str or None}]
-    """
-    pattern = re.compile(r'(</?(\w+)>)')
+    # Matches <TAG>, <TAG attr="val">, </TAG>
+    pattern = re.compile(r'(<(/?)(\w+)([^>]*)>)')
     segments = []
     pos = 0
     for m in pattern.finditer(text):
@@ -34,8 +31,8 @@ def _parse_tagged_text(text):
         if pos < start:
             segments.append({'type': 'text', 'value': text[pos:start], 'tag': None})
         full_tag = m.group(1)
-        tag_name = m.group(2)
-        is_close = full_tag.startswith('</')
+        is_close = m.group(2) == '/'
+        tag_name = m.group(3)
         segments.append({
             'type': 'close_tag' if is_close else 'open_tag',
             'value': full_tag,
