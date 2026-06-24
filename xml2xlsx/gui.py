@@ -59,11 +59,11 @@ class App(tk.Tk):
         )
         self.cb_master.grid(row=1, column=0, sticky="w")
 
-        self.no_lowercase = tk.BooleanVar(value=False)
+        self.compute_position = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             opt_frame,
-            text="Ne pas convertir le texte en minuscules",
-            variable=self.no_lowercase
+            text="Calculer la colonne POSITION_INTRODD",
+            variable=self.compute_position
         ).grid(row=2, column=0, sticky="w")
 
         # ── Lancer ────────────────────────────────────────────────────────
@@ -134,58 +134,46 @@ class App(tk.Tk):
     def _process(self, path):
         try:
             from xml2xlsx.xml2xlsx import (
-                parse_dtd, discover_schema_from_xml, extract_paragraphs,
-                reorder_columns, get_lowercase_columns
+                parse_dtd, extract_paragraphs, reorder_columns,
+                PREFAB_CHILDREN, PREFAB_ATTRIBS, NO_LOWER
             )
             from xml2xlsx.format_excel import format_excel
             import pandas as pd
             import numpy as np
 
             dtd_path = self.dtd_var.get().strip()
+            compute_position = self.compute_position.get()
             mode = self.mode.get()
-            no_lowercase = self.no_lowercase.get()
 
-            # Load schema: DTD → discover from first XML → error
             if dtd_path and os.path.isfile(dtd_path):
                 children_map, attribs_map = parse_dtd(dtd_path)
                 self._log(f"[schema] DTD chargé : {dtd_path}")
             else:
-                # Find first XML to discover schema
-                if mode == "xml":
-                    first_xml = path
-                else:  # dossier
-                    xml_files = [f for f in os.listdir(path) if f.endswith('.xml')]
-                    if not xml_files:
-                        self._log("✘ Aucun fichier XML trouvé pour découvrir le schéma.")
-                        return
-                    first_xml = os.path.join(path, xml_files[0])
-                
-                children_map, attribs_map = discover_schema_from_xml(first_xml)
-                self._log(f"[schema] Découvert depuis : {os.path.basename(first_xml)}")
+                children_map, attribs_map = PREFAB_CHILDREN, PREFAB_ATTRIBS
+                self._log("[schema] Schéma PREFAB intégré")
 
-            def process_rows(rows, out_path):
+            p_children = children_map.get('p', [])
+
+            def process_rows(rows, out_path, lowercased=True):
                 df = pd.DataFrame(rows)
                 df = df.replace('', np.nan)
                 df.dropna(axis=1, how='all', inplace=True)
-                
-                if not no_lowercase:
-                    lowercase_cols = get_lowercase_columns(df, children_map, attribs_map)
-                    for col in lowercase_cols:
-                        if col in df.columns:
-                            df[col] = df[col].map(
-                                lambda v: v.lower() if isinstance(v, str) else v)
-                
-                df = reorder_columns(df, children_map)
-                format_excel(df, out_path, children_map.get('p', []))
+                if lowercased:
+                    text_cols = [c for c in df.columns
+                                 if c.endswith('_text') and c not in NO_LOWER]
+                    df[text_cols] = df[text_cols].apply(
+                        lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v))
+                df = reorder_columns(df, p_children)
+                format_excel(df, out_path, p_children)
                 self._log(f"    ✔ {os.path.basename(out_path)}")
 
             # ── Fichier XML unique ─────────────────────────────────────────
             if mode == "xml":
-                rows = extract_paragraphs(path, children_map, attribs_map)
+                rows = extract_paragraphs(path, children_map, attribs_map, compute_position)
                 for row in rows:
                     row['source_file'] = os.path.basename(path)
                 out = path.replace(".xml", ".xlsx")
-                process_rows(rows, out)
+                process_rows(rows, out, lowercased=False)
 
             # ── Dossier ───────────────────────────────────────────────────
             elif mode == "dossier":
@@ -198,7 +186,7 @@ class App(tk.Tk):
                 for f in xml_files:
                     file_path = os.path.join(path, f)
                     self._log(f"  → {f}")
-                    rows = extract_paragraphs(file_path, children_map, attribs_map)
+                    rows = extract_paragraphs(file_path, children_map, attribs_map, compute_position)
                     if rows and self.save_individual.get():
                         ind_rows = [dict(r, source_file=f) for r in rows]
                         process_rows(ind_rows, file_path.replace(".xml", ".xlsx"))
