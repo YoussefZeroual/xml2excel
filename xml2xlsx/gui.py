@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import os
-import sys
 
 
 class App(tk.Tk):
@@ -21,30 +20,28 @@ class App(tk.Tk):
                         value="dossier", command=self._update_mode).grid(row=0, column=0, padx=8)
         ttk.Radiobutton(mode_frame, text="Fichier XML", variable=self.mode,
                         value="xml", command=self._update_mode).grid(row=0, column=1, padx=8)
-        ttk.Radiobutton(mode_frame, text="Fichier XLSX (recalcul positions)", variable=self.mode,
-                        value="xlsx", command=self._update_mode).grid(row=0, column=2, padx=8)
 
-        # ── Chemin ────────────────────────────────────────────────────────
+        # ── Chemin XML ────────────────────────────────────────────────────
         path_frame = ttk.LabelFrame(self, text="Chemin", padding=10)
         path_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
         path_frame.columnconfigure(0, weight=1)
 
         self.path_var = tk.StringVar()
-        self.path_entry = ttk.Entry(path_frame, textvariable=self.path_var, width=55)
-        self.path_entry.grid(row=0, column=0, padx=(0, 8))
-        self.browse_btn = ttk.Button(path_frame, text="Parcourir…", command=self._browse)
-        self.browse_btn.grid(row=0, column=1)
+        ttk.Entry(path_frame, textvariable=self.path_var, width=55).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(path_frame, text="Parcourir…", command=self._browse_input).grid(row=0, column=1)
+
+        # ── DTD (optionnel) ───────────────────────────────────────────────
+        dtd_frame = ttk.LabelFrame(self, text="Schéma DTD (optionnel)", padding=10)
+        dtd_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        dtd_frame.columnconfigure(0, weight=1)
+
+        self.dtd_var = tk.StringVar()
+        ttk.Entry(dtd_frame, textvariable=self.dtd_var, width=55).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(dtd_frame, text="Parcourir…", command=self._browse_dtd).grid(row=0, column=1)
 
         # ── Options ───────────────────────────────────────────────────────
         opt_frame = ttk.LabelFrame(self, text="Options", padding=10)
-        opt_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 10))
-
-        self.ignore_multi_ppi = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            opt_frame,
-            text="Ignorer les paragraphes avec plusieurs PPI (ignore_multi_ppi)",
-            variable=self.ignore_multi_ppi
-        ).grid(row=0, column=0, sticky="w")
+        opt_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 10))
 
         self.save_individual = tk.BooleanVar(value=True)
         self.cb_individual = ttk.Checkbutton(
@@ -52,7 +49,7 @@ class App(tk.Tk):
             text="Générer un fichier XLSX individuel par fichier XML",
             variable=self.save_individual
         )
-        self.cb_individual.grid(row=1, column=0, sticky="w")
+        self.cb_individual.grid(row=0, column=0, sticky="w")
 
         self.save_master = tk.BooleanVar(value=True)
         self.cb_master = ttk.Checkbutton(
@@ -60,26 +57,26 @@ class App(tk.Tk):
             text="Générer un fichier XLSX maître (fusion de tous les fichiers)",
             variable=self.save_master
         )
-        self.cb_master.grid(row=2, column=0, sticky="w")
+        self.cb_master.grid(row=1, column=0, sticky="w")
 
-        self.compute_position = tk.BooleanVar(value=False)
+        self.no_lowercase = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             opt_frame,
-            text="Calculer les colonnes POSITION_INTRODD et POSITION_INTRODD_DD",
-            variable=self.compute_position
-        ).grid(row=3, column=0, sticky="w")
+            text="Ne pas convertir le texte en minuscules",
+            variable=self.no_lowercase
+        ).grid(row=2, column=0, sticky="w")
 
         # ── Lancer ────────────────────────────────────────────────────────
         self.run_btn = ttk.Button(self, text="▶  Lancer la conversion", command=self._run)
-        self.run_btn.grid(row=3, column=0, columnspan=3, pady=(0, 10))
+        self.run_btn.grid(row=4, column=0, columnspan=3, pady=(0, 10))
 
         # ── Barre de progression ──────────────────────────────────────────
         self.progress = ttk.Progressbar(self, mode="indeterminate", length=400)
-        self.progress.grid(row=4, column=0, columnspan=3, pady=(0, 8))
+        self.progress.grid(row=5, column=0, columnspan=3, pady=(0, 8))
 
         # ── Journal ───────────────────────────────────────────────────────
         log_frame = ttk.LabelFrame(self, text="Journal", padding=6)
-        log_frame.grid(row=5, column=0, columnspan=3, sticky="ew")
+        log_frame.grid(row=6, column=0, columnspan=3, sticky="ew")
 
         self.log = tk.Text(log_frame, height=10, width=60, state="disabled",
                            font=("Courier", 9), bg="#1e1e1e", fg="#d4d4d4",
@@ -94,28 +91,29 @@ class App(tk.Tk):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _update_mode(self):
-        mode = self.mode.get()
-        folder_only = mode == "dossier"
+        folder_only = self.mode.get() == "dossier"
         state = "normal" if folder_only else "disabled"
         self.cb_individual.configure(state=state)
         self.cb_master.configure(state=state)
 
-    def _browse(self):
-        mode = self.mode.get()
-        if mode == "dossier":
+    def _browse_input(self):
+        if self.mode.get() == "dossier":
             path = filedialog.askdirectory(title="Sélectionner un dossier")
-        elif mode == "xml":
+        else:
             path = filedialog.askopenfilename(
                 title="Sélectionner un fichier XML",
                 filetypes=[("Fichiers XML", "*.xml"), ("Tous les fichiers", "*.*")]
             )
-        else:
-            path = filedialog.askopenfilename(
-                title="Sélectionner un fichier XLSX",
-                filetypes=[("Fichiers Excel", "*.xlsx"), ("Tous les fichiers", "*.*")]
-            )
         if path:
             self.path_var.set(path)
+
+    def _browse_dtd(self):
+        path = filedialog.askopenfilename(
+            title="Sélectionner un fichier DTD",
+            filetypes=[("Fichiers DTD", "*.dtd"), ("Tous les fichiers", "*.*")]
+        )
+        if path:
+            self.dtd_var.set(path)
 
     def _log(self, msg):
         self.log.configure(state="normal")
@@ -128,132 +126,97 @@ class App(tk.Tk):
         if not path:
             messagebox.showwarning("Chemin manquant", "Veuillez sélectionner un fichier ou un dossier.")
             return
-
         self.run_btn.configure(state="disabled")
         self.progress.start(10)
         self._log(f"▶ Démarrage… ({path})")
-
-        thread = threading.Thread(target=self._process, args=(path,), daemon=True)
-        thread.start()
+        threading.Thread(target=self._process, args=(path,), daemon=True).start()
 
     def _process(self, path):
         try:
             from xml2xlsx.xml2xlsx import (
-                extract_paragraphs, get_introdd_position_dd,
-                reorder_columns, NO_LOWER
+                parse_dtd, discover_schema_from_xml, extract_paragraphs,
+                reorder_columns, get_lowercase_columns
             )
-            from xml2xlsx.format_excel import format_ppi_bold
+            from xml2xlsx.format_excel import format_excel
             import pandas as pd
             import numpy as np
 
-            ignore_multi = self.ignore_multi_ppi.get()
-            compute_position = self.compute_position.get()
+            dtd_path = self.dtd_var.get().strip()
             mode = self.mode.get()
+            no_lowercase = self.no_lowercase.get()
 
-            self._log(f"[config] ignore_multi_ppi = {ignore_multi}")
-            self._log(f"[config] compute_position = {compute_position}")
+            # Load schema: DTD → discover from first XML → error
+            if dtd_path and os.path.isfile(dtd_path):
+                children_map, attribs_map = parse_dtd(dtd_path)
+                self._log(f"[schema] DTD chargé : {dtd_path}")
+            else:
+                # Find first XML to discover schema
+                if mode == "xml":
+                    first_xml = path
+                else:  # dossier
+                    xml_files = [f for f in os.listdir(path) if f.endswith('.xml')]
+                    if not xml_files:
+                        self._log("✘ Aucun fichier XML trouvé pour découvrir le schéma.")
+                        return
+                    first_xml = os.path.join(path, xml_files[0])
+                
+                children_map, attribs_map = discover_schema_from_xml(first_xml)
+                self._log(f"[schema] Découvert depuis : {os.path.basename(first_xml)}")
 
-            # ── Fichier XML unique ─────────────────────────────────────────
-            if mode == "xml":
-                rows = extract_paragraphs(path, compute_position)
-                for row in rows:
-                    row['source_file'] = os.path.basename(path)
+            def process_rows(rows, out_path):
                 df = pd.DataFrame(rows)
                 df = df.replace('', np.nan)
                 df.dropna(axis=1, how='all', inplace=True)
-                if compute_position and 'paragraph_text_dd' in df.columns:
-                    pos = df.columns.get_loc('paragraph_text_dd') + 1
-                    df.insert(pos, 'POSITION_INTRODD_DD',
-                              df['paragraph_text_dd'].map(
-                                  lambda t: get_introdd_position_dd(t, ignore_multi),
-                                  na_action='ignore'))
-                df = reorder_columns(df)
-                out = path.replace(".xml", ".xlsx")
-                format_ppi_bold(df, out)
-                self._log(f"✔ Fichier sauvegardé : {out}")
+                
+                if not no_lowercase:
+                    lowercase_cols = get_lowercase_columns(df, children_map, attribs_map)
+                    for col in lowercase_cols:
+                        if col in df.columns:
+                            df[col] = df[col].map(
+                                lambda v: v.lower() if isinstance(v, str) else v)
+                
+                df = reorder_columns(df, children_map)
+                format_excel(df, out_path, children_map.get('p', []))
+                self._log(f"    ✔ {os.path.basename(out_path)}")
 
-            # ── Fichier XLSX (recalcul) ───────────────────────────────────
-            elif mode == "xlsx":
-                if not compute_position:
-                    self._log("⚠ Cochez 'Calculer les positions' pour recalculer POSITION_INTRODD_DD.")
-                    return
-                df = pd.read_excel(path)
-                if 'paragraph_text_dd' not in df.columns:
-                    self._log("✘ Erreur : colonne 'paragraph_text_dd' introuvable.")
-                    return
-                if 'POSITION_INTRODD_DD' in df.columns:
-                    df['POSITION_INTRODD_DD'] = df['paragraph_text_dd'].map(
-                        lambda t: get_introdd_position_dd(t, ignore_multi), na_action='ignore')
-                else:
-                    pos = df.columns.get_loc('paragraph_text_dd') + 1
-                    df.insert(pos, 'POSITION_INTRODD_DD', df['paragraph_text_dd'].map(
-                        lambda t: get_introdd_position_dd(t, ignore_multi), na_action='ignore'))
-                df = reorder_columns(df)
-                format_ppi_bold(df, path)
-                self._log(f"✔ Fichier mis à jour : {path}")
+            # ── Fichier XML unique ─────────────────────────────────────────
+            if mode == "xml":
+                rows = extract_paragraphs(path, children_map, attribs_map)
+                for row in rows:
+                    row['source_file'] = os.path.basename(path)
+                out = path.replace(".xml", ".xlsx")
+                process_rows(rows, out)
 
             # ── Dossier ───────────────────────────────────────────────────
             elif mode == "dossier":
-                xml_files = sorted([f for f in os.listdir(path) if f.endswith('.xml')])
+                xml_files = sorted(f for f in os.listdir(path) if f.endswith('.xml'))
                 if not xml_files:
-                    self._log("✘ Aucun fichier XML trouvé dans le dossier.")
+                    self._log("✘ Aucun fichier XML trouvé.")
                     return
 
                 all_rows = []
                 for f in xml_files:
                     file_path = os.path.join(path, f)
-                    self._log(f"  → Traitement : {f}")
-                    rows = extract_paragraphs(file_path, compute_position)
-                    if rows:
-                        individual_df = pd.DataFrame(rows)
-                        individual_df = individual_df.replace('', np.nan)
-                        individual_df.dropna(axis=1, how='all', inplace=True)
-                        text_cols = [c for c in individual_df.columns
-                                     if c.endswith('_text') and c not in NO_LOWER]
-                        individual_df[text_cols] = individual_df[text_cols].apply(
-                            lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v)
-                        )
-                        if compute_position and 'paragraph_text_dd' in individual_df.columns:
-                            pos = individual_df.columns.get_loc('paragraph_text_dd') + 1
-                            individual_df.insert(pos, 'POSITION_INTRODD_DD',
-                                                 individual_df['paragraph_text_dd'].map(
-                                                     lambda t: get_introdd_position_dd(t, ignore_multi),
-                                                     na_action='ignore'))
-                        individual_df = reorder_columns(individual_df)
-                        if self.save_individual.get():
-                            individual_out = file_path.replace(".xml", ".xlsx")
-                            format_ppi_bold(individual_df, individual_out)
-                            self._log(f"    ✔ Individuel : {os.path.basename(individual_out)}")
-
+                    self._log(f"  → {f}")
+                    rows = extract_paragraphs(file_path, children_map, attribs_map)
+                    if rows and self.save_individual.get():
+                        ind_rows = [dict(r, source_file=f) for r in rows]
+                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"))
                     for row in rows:
                         row['source_file'] = f
                     all_rows.extend(rows)
 
                 if self.save_master.get() and all_rows:
-                    df = pd.DataFrame(all_rows)
-                    cols = ['source_file'] + [c for c in df.columns if c != 'source_file']
-                    df = df[cols]
-                    text_cols = [c for c in df.columns if c.endswith('_text') and c not in NO_LOWER]
-                    df[text_cols] = df[text_cols].apply(
-                        lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v)
-                    )
-                    df = df.replace('', np.nan)
-                    df.dropna(axis=1, how='all', inplace=True)
-                    if compute_position and 'paragraph_text_dd' in df.columns:
-                        pos = df.columns.get_loc('paragraph_text_dd') + 1
-                        df.insert(pos, 'POSITION_INTRODD_DD',
-                                  df['paragraph_text_dd'].map(
-                                      lambda t: get_introdd_position_dd(t, ignore_multi),
-                                      na_action='ignore'))
-                    df = reorder_columns(df)
                     master_out = os.path.join(path, "master_output.xlsx")
-                    format_ppi_bold(df, master_out)
-                    self._log(f"✔ Fichier maître : {master_out}")
+                    process_rows(all_rows, master_out)
+                    self._log(f"✔ Maître : {master_out}")
 
             self._log("✔ Conversion terminée.")
 
         except Exception as e:
+            import traceback
             self._log(f"✘ Erreur : {e}")
+            self._log(traceback.format_exc())
 
         finally:
             self.progress.stop()
@@ -261,8 +224,7 @@ class App(tk.Tk):
 
 
 def main():
-    app = App()
-    app.mainloop()
+    App().mainloop()
 
 
 if __name__ == '__main__':

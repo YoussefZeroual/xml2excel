@@ -1,12 +1,20 @@
-import re
-import pandas as pd
-import math
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Alignment, PatternFill
-from openpyxl.utils import get_column_letter
-import sys
+"""
+format_excel.py — Excel formatting for xml2xlsx output.
 
-# Color map: tag name -> hex RGB text color (for write_rich_string, xlsxwriter font color)
+Tag colours are configurable via TAG_COLORS. Any tag not listed falls back
+to TAG_COLOR_DEFAULT. No element names are hardcoded in the logic.
+"""
+
+import re
+import math
+import pandas as pd
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import PatternFill
+
+# ---------------------------------------------------------------------------
+# Tag colour configuration — edit here or pass a custom dict to format_excel()
+# ---------------------------------------------------------------------------
+
 TAG_COLORS = {
     'INTRODD':   '#1F4E79',  # dark blue
     'VDD':       '#7030A0',  # purple
@@ -16,13 +24,19 @@ TAG_COLORS = {
     'NONPPI':    '#375623',  # dark green
     'MD':        '#2E75B6',  # medium blue
     'APP':       '#595959',  # dark grey
-    'DD': '#1D6B5E',  # teal foncé
+    'DD':        '#1D6B5E',  # teal
 }
 TAG_COLOR_DEFAULT = '#000000'  # black for unknown tags
 
+# Column whose value is rendered with inline tag coloring
+RICH_TEXT_COLUMNS = {'paragraph_text'}
+
+
+# ---------------------------------------------------------------------------
+# Rich-text helpers
+# ---------------------------------------------------------------------------
 
 def _parse_tagged_text(text):
-    # Matches <TAG>, <TAG attr="val">, </TAG>
     pattern = re.compile(r'(<(/?)(\w+)([^>]*)>)')
     segments = []
     pos = 0
@@ -30,13 +44,11 @@ def _parse_tagged_text(text):
         start, end = m.start(), m.end()
         if pos < start:
             segments.append({'type': 'text', 'value': text[pos:start], 'tag': None})
-        full_tag = m.group(1)
         is_close = m.group(2) == '/'
-        tag_name = m.group(3)
         segments.append({
             'type': 'close_tag' if is_close else 'open_tag',
-            'value': full_tag,
-            'tag': tag_name
+            'value': m.group(1),
+            'tag': m.group(3),
         })
         pos = end
     if pos < len(text):
@@ -44,58 +56,47 @@ def _parse_tagged_text(text):
     return segments
 
 
-def _build_rich_string_args(text, workbook):
+def _build_rich_args(text, workbook, tag_colors=None):
     """
-    Build args list for worksheet.write_rich_string() from a tagged paragraph_text.
-    Tags are shown in grey italic, tag content is colored per TAG_COLORS.
-    Plain text (outside any tag) is black.
-    Returns None if the text has no tags (use plain write instead).
+    Build args list for worksheet.write_rich_string().
+    Returns None if text has no tags (caller should use plain write).
     """
+    tag_colors = tag_colors or TAG_COLORS
     segments = _parse_tagged_text(text)
     if not any(s['type'] in ('open_tag', 'close_tag') for s in segments):
         return None
 
-    tag_fmt_cache = {}
+    fmt_cache = {}
     plain_fmt = workbook.add_format({'font_color': '#000000', 'text_wrap': True, 'valign': 'top'})
-    tag_label_fmt = workbook.add_format({'font_color': '#AAAAAA', 'italic': True, 'text_wrap': True, 'valign': 'top'})
+    tag_label_fmt = workbook.add_format({'font_color': '#AAAAAA', 'italic': True,
+                                         'text_wrap': True, 'valign': 'top'})
 
-    def get_tag_fmt(tag_name):
-        if tag_name not in tag_fmt_cache:
-            color = TAG_COLORS.get(tag_name, TAG_COLOR_DEFAULT)
-            tag_fmt_cache[tag_name] = workbook.add_format({
-                'font_color': color,
-                'text_wrap': True,
-                'valign': 'top',
-                'bold': True, 
+    def get_fmt(tag_name):
+        if tag_name not in fmt_cache:
+            color = tag_colors.get(tag_name, TAG_COLOR_DEFAULT)
+            fmt_cache[tag_name] = workbook.add_format({
+                'font_color': color, 'bold': True,
+                'text_wrap': True, 'valign': 'top',
             })
-        return tag_fmt_cache[tag_name]
+        return fmt_cache[tag_name]
 
     args = []
-    # Track current open tag for coloring content
-    tag_stack = []
-
+    stack = []
     for seg in segments:
         if seg['type'] == 'open_tag':
-            tag_stack.append(seg['tag'])
-            args.append(tag_label_fmt)
-            args.append(seg['value'])
+            stack.append(seg['tag'])
+            args += [tag_label_fmt, seg['value']]
         elif seg['type'] == 'close_tag':
-            args.append(tag_label_fmt)
-            args.append(seg['value'])
-            if tag_stack and tag_stack[-1] == seg['tag']:
-                tag_stack.pop()
-        else:  # plain text
+            args += [tag_label_fmt, seg['value']]
+            if stack and stack[-1] == seg['tag']:
+                stack.pop()
+        else:
             val = seg['value']
             if not val:
                 continue
-            if tag_stack:
-                # Color by innermost tag
-                args.append(get_tag_fmt(tag_stack[-1]))
-            else:
-                args.append(plain_fmt)
-            args.append(val)
+            fmt = get_fmt(stack[-1]) if stack else plain_fmt
+            args += [fmt, val]
 
-    # write_rich_string needs at least one format+string pair
     # Filter empty strings
     filtered = []
     i = 0
@@ -105,24 +106,40 @@ def _build_rich_string_args(text, workbook):
                 filtered.append(args[i])
             i += 1
         else:
-            # it's a format object, pair with next string
-            if i + 1 < len(args) and isinstance(args[i+1], str) and args[i+1]:
-                filtered.append(args[i])
-                filtered.append(args[i+1])
+            if i + 1 < len(args) and isinstance(args[i + 1], str) and args[i + 1]:
+                filtered += [args[i], args[i + 1]]
             i += 2
 
-    if not filtered:
-        return None
-    return filtered
+    return filtered if filtered else None
 
 
-def format_ppi_bold(df, filename):
-    for col in df.columns:
-        if df[col].dtype == object:
-            df[col] = df[col].apply(
-                lambda v: v.replace('–', '\n–').replace('\n\n', '\n') if isinstance(v, str) else v
-            )
+# ---------------------------------------------------------------------------
+# Main formatting function
+# ---------------------------------------------------------------------------
 
+def format_excel(df, filename, p_children=None, tag_colors=None,
+                 rich_text_columns=None):
+    """
+    Write *df* to *filename* (.xlsx) with:
+      - header row (bold, grey background)
+      - rich-text colour coding for columns in *rich_text_columns*
+      - auto column widths (capped at 100)
+      - auto row heights
+    
+    Parameters
+    ----------
+    df               : DataFrame to write
+    filename         : output path
+    p_children       : list of top-level element tags (used for col ordering,
+                       not strictly needed here)
+    tag_colors       : dict {tag_name: hex_color} — overrides TAG_COLORS
+    rich_text_columns: set of column names to render with inline tag colours
+                       (default: RICH_TEXT_COLUMNS = {'paragraph_text'})
+    """
+    tag_colors = tag_colors or TAG_COLORS
+    rich_cols = rich_text_columns or RICH_TEXT_COLUMNS
+
+    # Clean up column names
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
     df = df.reset_index(drop=True)
 
@@ -131,154 +148,119 @@ def format_ppi_bold(df, filename):
         worksheet = workbook.add_worksheet('Sheet1')
         writer.sheets['Sheet1'] = worksheet
 
-        bold = workbook.add_format({'bold': True})
         regular = workbook.add_format({'text_wrap': True, 'valign': 'top'})
-        header_format = workbook.add_format({'bold': True, 'valign': 'top', 'bg_color': '#F2F2F2'})
+        bold_fmt = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top'})
+        header_fmt = workbook.add_format({'bold': True, 'valign': 'top',
+                                          'bg_color': '#F2F2F2'})
 
+        # Headers
         for col_num, col_name in enumerate(df.columns):
-            worksheet.write(0, col_num, col_name, header_format)
+            worksheet.write(0, col_num, col_name, header_fmt)
 
-        # Calculate column widths
+        # Column widths
         col_widths = {col: len(str(col)) for col in df.columns}
         for row_num in range(len(df)):
             for col_num, col_name in enumerate(df.columns):
-                cell_value = df.iloc[row_num][col_name]
-                if pd.notna(cell_value):
-                    text = str(cell_value)
-                    if not text.strip():
-                        continue
-                    clean = re.sub(r'<[^>]+>', '', text)
-                    clean = re.sub(r'\*\*', '', clean)
+                val = df.iloc[row_num][col_name]
+                if pd.notna(val):
+                    clean = re.sub(r'<[^>]+>', '', str(val))
                     col_widths[col_name] = max(col_widths[col_name], len(clean) + 2)
-
         for col_name in col_widths:
             col_widths[col_name] = min(col_widths[col_name], 100)
 
-        # Calculate row heights
-        base_height = 15
+        # Row heights
+        base_h = 15
         row_heights = {}
         for row_num in range(len(df)):
-            excel_row = row_num + 1
-            max_height = base_height
-            for col_num, col_name in enumerate(df.columns):
-                cell_value = df.iloc[row_num][col_name]
-                if pd.notna(cell_value):
-                    text = str(cell_value)
-                    clean = re.sub(r'<[^>]+>', '', text)
-                    clean = re.sub(r'\*\*', '', clean)
-                    col_width = col_widths[col_name]
-                    chars_per_line = int(col_width * 1.1)
-                    lines_needed = max(1, math.ceil(len(clean) / chars_per_line)) if chars_per_line > 0 else 1
-                    max_height = max(max_height, base_height * lines_needed)
-            row_heights[excel_row] = max_height
+            max_h = base_h
+            for col_name in df.columns:
+                val = df.iloc[row_num][col_name]
+                if pd.notna(val):
+                    clean = re.sub(r'<[^>]+>', '', str(val))
+                    w = col_widths[col_name]
+                    lines = max(1, math.ceil(len(clean) / max(int(w * 1.1), 1)))
+                    max_h = max(max_h, base_h * lines)
+            row_heights[row_num + 1] = max_h
 
         # Set column widths
         for col_num, col_name in enumerate(df.columns):
             worksheet.set_column(col_num, col_num, col_widths[col_name], regular)
 
-        # Write content
+        # Write rows
         for row_num in range(len(df)):
             excel_row = row_num + 1
             worksheet.set_row(excel_row, row_heights[excel_row])
 
             for col_num, col_name in enumerate(df.columns):
-                cell_value = df.iloc[row_num][col_name]
+                val = df.iloc[row_num][col_name]
+                if pd.isna(val):
+                    continue
+                text = str(val)
 
-                if pd.notna(cell_value):
-                    text = str(cell_value)
-
-                    if col_name in ['paragraph_text','paragraph_text_dd']:
-                        # Rich string with tag color coding
-                        rich_args = _build_rich_string_args(text, workbook)
-                        if rich_args:
-                            worksheet.write_rich_string(excel_row, col_num, *rich_args)
+                if col_name in rich_cols:
+                    rich_args = _build_rich_args(text, workbook, tag_colors)
+                    if rich_args:
+                        worksheet.write_rich_string(excel_row, col_num, *rich_args)
+                    else:
+                        worksheet.write(excel_row, col_num, text, regular)
+                else:
+                    # Bold markup: **text** or <strong>text</strong>
+                    text = re.sub(r'\*\*(.*?)\*\*', r'<B>\1</B>', text)
+                    text = re.sub(r'<strong>(.*?)</strong>', r'<B>\1</B>', text,
+                                  flags=re.IGNORECASE)
+                    parts = re.split(r'(<B>|</B>)', text)
+                    if len(parts) > 1:
+                        rich = []
+                        bold_on = False
+                        for part in parts:
+                            if part == '<B>':
+                                bold_on = True
+                            elif part == '</B>':
+                                bold_on = False
+                            elif part:
+                                rich += [bold_fmt if bold_on else regular, part]
+                        rich = [x for x in rich if x != '']
+                        if rich:
+                            worksheet.write_rich_string(excel_row, col_num, *rich)
                         else:
                             worksheet.write(excel_row, col_num, text, regular)
                     else:
-                        # Existing PPI bold logic for other columns
-                        text = re.sub(r'\*\*(.*?)\*\*', r'<PPI>\1</PPI>', text)
-                        text = re.sub(r'<strong>(.*?)</strong>', r'<PPI>\1</PPI>', text)
-                        parts = re.split(r'(<PPI>|</PPI>)', text)
+                        worksheet.write(excel_row, col_num, text, regular)
 
-                        if len(parts) > 1:
-                            rich_string = []
-                            is_bold = False
-                            for part in parts:
-                                if part == '<PPI>':
-                                    is_bold = True
-                                    rich_string.append('<PPI>')
-                                elif part == '</PPI>':
-                                    is_bold = False
-                                    rich_string.append('</PPI>')
-                                else:
-                                    if part:
-                                        if is_bold:
-                                            rich_string.append(bold)
-                                            rich_string.append(part)
-                                        else:
-                                            rich_string.append(part)
-                            rich_string = [item for item in rich_string if item != '']
-                            if rich_string:
-                                worksheet.write_rich_string(excel_row, col_num, *rich_string)
-                            else:
-                                worksheet.write(excel_row, col_num, text, regular)
-                        else:
-                            worksheet.write(excel_row, col_num, text, regular)
 
+# ---------------------------------------------------------------------------
+# Comparison colouring (kept for evaluation workflows)
+# ---------------------------------------------------------------------------
 
 def color_compare_pairs(df, filename):
-    df_copy = df.copy()
-    human_cols = [col for col in df_copy.columns if col.endswith('_human')]
-    pairs = []
-    for human_col in human_cols:
-        ia_col = human_col.replace('_human', '_ia')
-        if ia_col in df_copy.columns:
-            pairs.append((human_col, ia_col))
-
+    """Green/red fill for _human vs _ia column pairs."""
+    human_cols = [c for c in df.columns if c.endswith('_human')]
+    pairs = [(h, h.replace('_human', '_ia'))
+             for h in human_cols if h.replace('_human', '_ia') in df.columns]
     if not pairs:
-        print("No '_human' and '_ia' column pairs found")
         return
 
     with pd.ExcelWriter(filename, engine='openpyxl', mode='w') as writer:
-        df_copy.to_excel(writer, index=False, sheet_name='Sheet1')
-        workbook = writer.book
-        worksheet = writer.sheets['Sheet1']
-
-        green_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
-        red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
-
-        for row_num in range(len(df_copy)):
-            excel_row = row_num + 2
-            for human_col, ia_col in pairs:
-                human_val = df_copy.iloc[row_num][human_col]
-                ia_val = df_copy.iloc[row_num][ia_col]
-                human_str = str(human_val) if pd.notna(human_val) else ""
-                ia_str = str(ia_val) if pd.notna(ia_val) else ""
-                are_equal = human_str.strip().lower() == ia_str.strip().lower()
-                human_col_idx = df_copy.columns.get_loc(human_col)
-                ia_col_idx = df_copy.columns.get_loc(ia_col)
-                fill = green_fill if are_equal else red_fill
-                worksheet.cell(row=excel_row, column=human_col_idx + 1).fill = fill
-                worksheet.cell(row=excel_row, column=ia_col_idx + 1).fill = fill
-
-        for column in worksheet.columns:
-            max_length = 0
-            column_letter = get_column_letter(column[0].column)
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+        wb = writer.book
+        ws = writer.sheets['Sheet1']
+        green = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+        red   = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+        for row_num in range(len(df)):
+            er = row_num + 2
+            for hc, ic in pairs:
+                hv = str(df.iloc[row_num][hc]) if pd.notna(df.iloc[row_num][hc]) else ''
+                iv = str(df.iloc[row_num][ic])  if pd.notna(df.iloc[row_num][ic])  else ''
+                fill = green if hv.strip().lower() == iv.strip().lower() else red
+                ws.cell(row=er, column=df.columns.get_loc(hc) + 1).fill = fill
+                ws.cell(row=er, column=df.columns.get_loc(ic) + 1).fill = fill
+        for col in ws.columns:
+            letter = get_column_letter(col[0].column)
+            width = min(max((len(str(c.value)) for c in col if c.value), default=10) + 2, 50)
+            ws.column_dimensions[letter].width = width
 
 
-def format_and_compare(df, filename):
-    format_ppi_bold(df, filename)
-    temp_df = pd.read_excel(filename)
-    color_compare_pairs(temp_df, filename)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
+    import sys
     df = pd.read_excel(sys.argv[1])
-    format_ppi_bold(df, sys.argv[1].replace(".xlsx", "_formatted.xlsx"))
+    format_excel(df, sys.argv[1].replace('.xlsx', '_formatted.xlsx'))
