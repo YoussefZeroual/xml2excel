@@ -1,0 +1,254 @@
+# Documentation — `xml2xlsx`
+## Convertisseur de corpus XML annoté vers Excel
+
+**Version documentée :** package `xml2xlsx`
+**Public cible :** linguistes et annotateurs maîtrisant XML et les corpus écrits, sans formation Python particulière
+
+---
+
+## Vue d'ensemble
+
+`xml2xlsx` est un outil qui transforme des fichiers XML annotés en tableaux Excel lisibles, avec mise en couleur automatique des balises. Chaque paragraphe `<p>` du corpus devient une ligne du tableau ; chaque balise imbriquée devient une colonne.
+
+La détection et l'extraction des balises est **entièrement générique** : l'outil ne présuppose aucun schéma d'annotation particulier. Il suffit de lui fournir une DTD pour qu'il s'adapte automatiquement à n'importe quelle hiérarchie de balises et d'attributs, quel que soit le projet ou la convention d'annotation utilisée.
+
+L'outil peut être utilisé de deux façons :
+- via une **interface graphique** (fenêtre avec boutons) — recommandé pour les non-développeurs
+- via la **ligne de commande** — pour les usages avancés ou automatisés
+
+---
+
+## 1. Lancement de l'interface graphique
+
+Depuis un terminal, dans le dossier du projet :
+
+```
+python -m xml2xlsx.gui
+```
+
+Une fenêtre s'ouvre avec les sections suivantes.
+
+---
+
+## 2. L'interface graphique pas à pas
+
+### 2.1 Source d'entrée
+
+Choisissez entre :
+
+| Option | Usage |
+|--------|-------|
+| **Dossier** | Traite tous les `.xml` d'un répertoire en une seule passe ; génère un fichier Excel par corpus + un fichier maître fusionné |
+| **Fichier XML** | Traite un seul fichier `.xml` |
+
+### 2.2 Chemin
+
+Cliquez sur **Parcourir…** pour sélectionner votre dossier ou fichier. Le chemin s'affiche dans le champ texte (vous pouvez aussi le saisir directement).
+
+### 2.3 Schéma DTD (optionnel)
+
+C'est ici que vous indiquez la **DTD** de votre corpus.
+
+La DTD (Document Type Definition) décrit la structure XML : quelles balises existent, dans quel ordre, avec quels attributs. `xml2xlsx` s'en sert pour savoir quelles colonnes créer dans Excel.
+
+- **Avec DTD** : l'outil lit votre DTD et génère les colonnes correspondant exactement à votre schéma d'annotation.
+- **Sans DTD** : l'outil utilise un schéma PREFAB intégré par défaut (balises `PPI`, `NONPPI`, `INTRODD`, `VDD`, `EXPANSION`, `MOD`, `MD`, `APP`).
+
+> Si votre corpus utilise le schéma PREFAB standard, vous pouvez laisser ce champ vide.
+
+### 2.4 Options
+
+| Option | Effet |
+|--------|-------|
+| **Générer un fichier XLSX individuel par fichier XML** | Crée un `.xlsx` à côté de chaque `.xml` traité (mode dossier uniquement) |
+| **Générer un fichier XLSX maître** | Crée un fichier `master_output.xlsx` qui fusionne tous les fichiers du dossier |
+| **Calculer la colonne POSITION_INTRODD** | Ajoute une colonne indiquant si `<INTRODD>` est en position `ANTE`, `POST` ou `AUTRE` par rapport à `<PPI>` dans chaque paragraphe |
+
+### 2.5 Lancer la conversion
+
+Cliquez sur **▶ Lancer la conversion**. Une barre de progression animée indique que le traitement est en cours.
+
+Le **Journal** (panneau noir en bas) affiche en temps réel :
+- les fichiers traités
+- les fichiers Excel créés
+- les éventuelles erreurs
+
+---
+
+## 3. Structure du fichier Excel produit
+
+### 3.1 Colonnes générées
+
+Le tableau suit la hiérarchie de votre XML. Pour chaque `<p>`, les colonnes sont :
+
+| Colonne | Contenu |
+|---------|---------|
+| `source_file` | Nom du fichier XML d'origine |
+| `p_id` | Identifiant extrait du paragraphe (entre guillemets dans le texte, si présent) |
+| `paragraph_text` | Texte complet du paragraphe avec les balises XML en couleur |
+| `POSITION_INTRODD` | Position d'INTRODD (si l'option est activée) |
+| `NOM_BALISE_text` | Texte contenu dans `<NOM_BALISE>` |
+| `NOM_BALISE_attribut` | Valeur de l'attribut `attribut` sur `<NOM_BALISE>` |
+
+Pour les balises imbriquées, les noms de colonnes reflètent la hiérarchie par chaînage : `INTRODD_VDD_text`, `INTRODD_VDD_lemme`, etc.
+
+Quand une balise apparaît plusieurs fois dans un même paragraphe, les occurrences supplémentaires reçoivent un suffixe numérique : `EXPANSION_text`, `EXPANSION_2_text`, `EXPANSION_3_text`.
+
+### 3.2 Mise en couleur dans la colonne `paragraph_text`
+
+Le texte du paragraphe est restitué avec les balises XML visibles et colorées selon leur type :
+
+| Balise | Signification | Couleur |
+|--------|--------------|---------|
+| `PPI` | Phrase préfabriquée des interactions | Rouge foncé |
+| `NONPPI` | Segment non PPI | Vert foncé |
+| `DD` | Discours direct | Turquoise |
+| `INTRODD` | Introducteur du discours direct | Bleu foncé |
+| `VDD` | Verbe introducteur du discours direct | Violet |
+| `EXPANSION` | Expansion de l'introducteur du discours direct | Orange |
+| `MD` | Marqueur du discours | Bleu moyen |
+| `MOD` | Modifieur | Marron |
+| `APP` | Appellatif | Gris foncé |
+
+Le texte entre les balises est affiché dans la couleur de sa balise parente. Les balises elles-mêmes (`<PPI>`, `</PPI>`) sont grises et en italique pour rester lisibles sans dominer le contenu.
+
+### 3.3 Casse du texte
+
+- En **mode fichier unique** : la casse originale est conservée.
+- En **mode dossier** (fichiers individuels et maître) : les colonnes de texte sont mises en minuscules pour faciliter la comparaison et le tri, sauf `paragraph_text` et quelques colonnes contextuelles.
+
+---
+
+## 4. Vérification d'intégrité automatique
+
+Après chaque conversion, l'outil compare automatiquement le contenu du fichier XML source avec le tableau Excel produit :
+
+- Il compte le nombre d'occurrences de chaque balise et attribut dans le XML.
+- Il compte les cellules non vides correspondantes dans Excel.
+- Il affiche un rapport dans le Journal :
+  - `OK: PPI: Excel=12, xml=12` → tout correspond
+  - `Erreur: VDD: Excel=10, xml=11` → décalage détecté, avec détail de la position divergente
+
+> **Note importante :** contrairement au moteur d'extraction des balises — qui est entièrement générique et s'adapte à n'importe quel schéma via la DTD — la vérification d'intégrité a été développée spécifiquement pour les fichiers traités dans le cadre du projet en cours. Elle peut produire des résultats incorrects ou incomplets sur des corpus dont la structure s'écarte de celle prévue. Elle n'est par ailleurs active que si un fichier DTD est fourni.
+
+---
+
+## 5. Utilisation en ligne de commande
+
+Pour les utilisateurs à l'aise avec le terminal.
+
+### Syntaxe générale
+
+```
+python -m xml2xlsx.xml2xlsx <entrée> [sortie] [options]
+```
+
+### Exemples
+
+**Convertir un fichier XML unique :**
+```
+python -m xml2xlsx.xml2xlsx mon_corpus.xml
+```
+Produit `mon_corpus.xlsx` dans le même dossier.
+
+**Convertir tous les XML d'un dossier :**
+```
+python -m xml2xlsx.xml2xlsx /chemin/vers/dossier/
+```
+Produit un `.xlsx` par fichier + `master_output.xlsx`.
+
+**Avec DTD explicite :**
+```
+python -m xml2xlsx.xml2xlsx mon_corpus.xml --dtd schema.dtd
+```
+
+**Avec calcul de POSITION_INTRODD :**
+```
+python -m xml2xlsx.xml2xlsx mon_corpus.xml --position
+```
+
+**Sans fichiers individuels (maître seulement) :**
+```
+python -m xml2xlsx.xml2xlsx /chemin/dossier/ --no-individual
+```
+
+**Spécifier le fichier de sortie :**
+```
+python -m xml2xlsx.xml2xlsx mon_corpus.xml resultats/export.xlsx
+```
+
+### Tableau des options
+
+| Option | Description |
+|--------|-------------|
+| `--dtd chemin/schema.dtd` | Chemin vers la DTD (sinon schéma PREFAB par défaut) |
+| `--position` | Calcule la colonne `POSITION_INTRODD` |
+| `--no-individual` | Ne génère pas de fichier individuel par XML (mode dossier) |
+
+---
+
+## 6. Structure XML attendue
+
+L'outil attend un XML structuré avec des paragraphes `<p>` contenant des balises d'annotation imbriquées. Exemple minimal compatible avec le schéma PREFAB :
+
+```xml
+<text>
+  <p>"tu parles"; 3.2; "il faut voir"
+    <PPI decl="idiom" type="ppi" position="1">
+      tu parles
+      <MD>vraiment</MD>
+    </PPI>
+  </p>
+  <p>"ça marche"; 1.0; "d'accord"
+    <NONPPI>ça marche</NONPPI>
+  </p>
+</text>
+```
+
+L'identifiant de paragraphe (`p_id`) est extrait automatiquement depuis la première expression entre guillemets (`"…"`) dans le texte brut du `<p>`.
+
+---
+
+## 7. Fichiers produits et où les trouver
+
+| Fichier | Emplacement |
+|---------|-------------|
+| Fichier Excel individuel | Même dossier que le `.xml` source, même nom, extension `.xlsx` |
+| Fichier Excel maître | Dans le dossier traité, nommé `master_output.xlsx` |
+
+---
+
+## 8. Problèmes courants
+
+**Le journal affiche « Aucun fichier XML trouvé »**
+→ Vérifiez que le dossier sélectionné contient bien des fichiers `.xml` (et non des `.XML` en majuscules sur certains systèmes).
+
+**Des colonnes sont absentes du tableau**
+→ Si vous avez fourni une DTD, vérifiez qu'elle déclare bien toutes les balises utilisées dans vos fichiers. Sans DTD, seules les balises du schéma PREFAB intégré sont extraites.
+
+**La vérification d'intégrité signale des erreurs**
+→ Lisez le détail dans le Journal. L'outil indique précisément la position (numéro de ligne dans le XML) et la valeur divergente, ce qui permet de retrouver l'élément problématique.
+
+**L'interface graphique ne se lance pas**
+→ Vérifiez que le package est bien installé (`pip install xml2xlsx` ou installation depuis les sources) et que `tkinter` est disponible dans votre environnement Python.
+
+---
+
+## 9. Glossaire rapide
+
+| Terme | Signification dans ce contexte |
+|-------|-------------------------------|
+| DTD | Document Type Definition — fichier décrivant les balises autorisées et leur hiérarchie |
+| Schéma PREFAB | Ensemble de balises prédéfinies propres au projet ANR PREFAB (voir table des couleurs section 3.2) |
+| Fichier maître | Fichier Excel regroupant les données de tous les XML d'un dossier dans un seul tableau |
+| POSITION_INTRODD | Colonne calculée indiquant si l'introducteur du DD précède (ANTE) ou suit (POST) la PPI dans le même paragraphe |
+| Rich text | Texte formaté dans une cellule Excel avec plusieurs couleurs, utilisé ici pour visualiser les balises en place |
+| PPI | Phrase préfabriquée des interactions |
+| NONPPI | Segment non PPI |
+| DD | Discours direct |
+| INTRODD | Introducteur du discours direct |
+| VDD | Verbe introducteur du discours direct |
+| EXPANSION | Expansion de l'introducteur du discours direct |
+| MD | Marqueur du discours |
+| MOD | Modifieur |
+| APP | Appellatif |
