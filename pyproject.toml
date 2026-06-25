@@ -13,7 +13,8 @@ dependencies = [
     "openpyxl",
     "pandas",
     "numpy",
-    "lxml"
+    "lxml",
+    "tkinter"
 ]
 
 [project.scripts]
