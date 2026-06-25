@@ -4,6 +4,7 @@ xml2xlsx/__init__.py
 xml2xlsx/format_excel.py
 xml2xlsx/gui.py
 xml2xlsx/integrity_check.py
+xml2xlsx/integrity_check_reverse.py
 xml2xlsx/xml2xlsx.py
 xml2xlsx_lidilem.egg-info/PKG-INFO
 xml2xlsx_lidilem.egg-info/SOURCES.txt

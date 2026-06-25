@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: xml2xlsx-lidilem
-Version: 0.2.6
+Version: 0.2.7
 Summary: Convertisseur XML annoté vers Excel (corpus littéraires PREFAB)
 License: MIT
 Requires-Python: >=3.8
@@ -9,126 +9,156 @@ Requires-Dist: openpyxl
 Requires-Dist: pandas
 Requires-Dist: numpy
 
-# Documentation — `xml2xlsx`
-## Convertisseur de corpus XML annoté vers Excel
+# Documentation — xml2xlsx v0.2.7
 
-**Public cible :** linguistes et annotateurs maîtrisant XML et les corpus écrits, sans formation Python particulière
+## Nouveautés
 
----
+### 1️⃣ Schéma DTD pour plus de précision
+Le script peut maintenant lire un fichier DTD (schéma XML) pour découvrir automatiquement:
+- Les éléments et leur hiérarchie
+- Les attributs déclarés pour chaque balise
+- L'ordre correct des balises
 
-## Vue d'ensemble
-
-`xml2xlsx` transforme des fichiers XML annotés en tableaux Excel lisibles, avec mise en couleur automatique des balises. Chaque paragraphe `<p>` du corpus devient une ligne du tableau ; chaque balise imbriquée devient une colonne.
-
-La détection et l'extraction des balises est **entièrement générique** : l'outil ne présuppose aucun schéma d'annotation particulier. Il s'adapte automatiquement à n'importe quelle hiérarchie de balises et d'attributs à partir de la DTD fournie.
-
----
-
-## 1. Lancement
-
-Depuis un terminal, dans le dossier du projet :
-
+**Utilisation:**
 ```
-python -m xml2xlsx.gui
+--dtd /chemin/vers/schema.dtd
 ```
 
----
-
-## 2. L'interface graphique pas à pas
-
-### 2.1 Source d'entrée
-
-| Option | Usage |
-|--------|-------|
-| **Dossier** | Traite tous les `.xml` d'un répertoire ; génère un fichier Excel par corpus + un fichier maître fusionné |
-| **Fichier XML** | Traite un seul fichier `.xml` |
-
-### 2.2 Chemin
-
-Cliquez sur **Parcourir…** pour sélectionner votre dossier ou fichier.
-
-### 2.3 Schéma DTD
-
-Champ **obligatoire**. La DTD (Document Type Definition) décrit la structure de votre XML : quelles balises existent, dans quel ordre, avec quels attributs. `xml2xlsx` s'en sert pour savoir quelles colonnes créer dans Excel.
-
-### 2.4 Options
-
-| Option | Effet |
-|--------|-------|
-| **Générer un fichier XLSX individuel par fichier XML** | Crée un `.xlsx` à côté de chaque `.xml` traité (mode dossier uniquement) |
-| **Générer un fichier XLSX maître** | Crée un fichier `master_output.xlsx` fusionnant tous les fichiers du dossier |
-| **Calculer la colonne POSITION_INTRODD** | Ajoute une colonne indiquant si `<INTRODD>` est en position `ANTE`, `POST` ou `AUTRE` par rapport à `<PPI>` dans chaque paragraphe |
-
-### 2.5 Lancer la conversion
-
-Cliquez sur **▶ Lancer la conversion**. Le **Journal** (panneau noir en bas) affiche en temps réel les fichiers traités, les fichiers Excel créés, et les éventuelles erreurs.
+Sans DTD, le script utilise un schéma préfixé (INTRODD, PPI, VDD...).
 
 ---
 
-## 3. Structure du fichier Excel produit
-
-### 3.1 Colonnes générées
-
-Le tableau suit la hiérarchie de votre XML. Pour chaque `<p>`, les colonnes sont :
-
-| Colonne | Contenu |
-|---------|---------|
-| `source_file` | Nom du fichier XML d'origine |
-| `p_id` | Identifiant extrait du paragraphe (première expression entre guillemets) |
-| `paragraph_text` | Texte complet du paragraphe avec balises XML colorées |
-| `POSITION_INTRODD` | Position d'INTRODD (si l'option est activée) |
-| `NOM_BALISE_text` | Texte contenu dans `<NOM_BALISE>` |
-| `NOM_BALISE_attribut` | Valeur de l'attribut `attribut` sur `<NOM_BALISE>` |
-
-Pour les balises imbriquées, les noms de colonnes reflètent la hiérarchie par chaînage : `INTRODD_VDD_text`, `INTRODD_VDD_lemme`, etc. Quand une balise apparaît plusieurs fois dans un même paragraphe, les occurrences supplémentaires reçoivent un suffixe numérique : `EXPANSION_text`, `EXPANSION_2_text`, `EXPANSION_3_text`.
-
-### 3.2 Mise en couleur dans la colonne `paragraph_text`
-
-Le texte du paragraphe est restitué avec les balises XML visibles et colorées. La table ci-dessous correspond au schéma PREFAB ; avec une DTD différente, les couleurs s'appliquent aux balises du même nom si elles existent.
-
-| Balise | Signification | Couleur |
-|--------|--------------|---------|
-| `PPI` | Phrase préfabriquée des interactions | Rouge foncé |
-| `NONPPI` | Segment non PPI | Vert foncé |
-| `DD` | Discours direct | Turquoise |
-| `INTRODD` | Introducteur du discours direct | Bleu foncé |
-| `VDD` | Verbe introducteur du discours direct | Violet |
-| `EXPANSION` | Expansion de l'introducteur du discours direct | Orange |
-| `MD` | Marqueur du discours | Bleu moyen |
-| `MOD` | Modifieur | Marron |
-| `APP` | Appellatif | Gris foncé |
-
-### 3.3 Casse du texte
-
-- En **mode fichier unique** : la casse originale est conservée.
-- En **mode dossier** : les colonnes de texte sont mises en minuscules pour faciliter la comparaison et le tri, sauf `paragraph_text` et quelques colonnes contextuelles.
+### 2️⃣ Extraction généraliste
+Le script n'est plus limité aux balises INTRODD/PPI/VDD. Il fonctionne avec **n'importe quel XML** tant que le DTD ou le schéma préfixé est fourni.
+Le script permet également d'extraire les commentaires et de les mettre dans leur propre colonne dans le fichier Excel.
+**Exemple:** Extraire un document avec tags `<chapter>`, `<section>`, `<paragraph>`:
+```
+$ xml2xlsx input.xml output.xlsx --dtd book.dtd
+```
 
 ---
 
-## 4. Vérification d'intégrité automatique
+### 3️⃣ Test de conformité (Integrity Check)
+Après conversion, le script compare automatiquement:
+- **Nombre de balises** en Excel vs XML
+- **Nombre d'attributs** par balise
+- **Intégrité du contenu** (texte supprimé, attributs modifiés)
 
-Après chaque conversion, l'outil compare le contenu du fichier XML source avec le tableau Excel produit, et affiche un rapport dans le Journal :
+**Détecte:**
+- Cellules vides manquantes (`❌ Erreur: VDD_type: Excel=193, xml=195`)
+- Tags malformés ou supprimés
+- Désynchronisation Excel ↔ XML
 
-- `OK: PPI: Excel=12, xml=12` → tout correspond
-- `Erreur: VDD: Excel=10, xml=11` → décalage détecté, avec indication de la position divergente
+> **Exemple:** Le test a détecté `❌ p: Excel=516, xml=517` — une balise `<p>` malformée à la ligne 3652 du fichier '4-cest-pas-croyable_04_06_26.xml': '<p>"«</p> 
 
-> **Note :** contrairement au moteur d'extraction — entièrement générique — la vérification d'intégrité a été développée spécifiquement pour les fichiers traités dans le cadre du projet en cours. Elle peut produire des résultats incorrects sur des corpus de structure différente.
+N.B: le test d'intégrité est conçu spécifiquement pour les balises INTRODD, VDD, etc., il ne supporte pas pour le moment d'autres types de corpus avec des balises différentes.
+---
+
+### 4️⃣ Mode Reverse: Injecter l'Excel vers XML
+
+Modifiez le fichier Excel, puis réinjectez les changements dans l'XML original.
+
+#### Comment utiliser le mode reverse?
+
+**Étape 1: Sélectionner le mode**
+```
+Radio: "Réécrire XML depuis Excel"
+```
+
+**Étape 2: Sélectionner le fichier Excel modifié**
+```
+Chemin: /chemin/vers/document_modifié.xlsx
+```
+
+**Étape 3: Sélectionner le XML original**
+```
+XML original: /chemin/vers/document_original.xml
+```
+
+**Étape 4: Lancer**
+```
+Cliquer "▶ Lancer"
+```
+
+Résultat: `document_original_updated.xml`
 
 ---
 
-## 5. Glossaire
+#### Exemple: Ajouter une nouvelle balise
 
-| Terme | Signification |
-|-------|--------------|
-| DTD | Document Type Definition — fichier décrivant les balises autorisées et leur hiérarchie |
-| Fichier maître | Fichier Excel regroupant les données de tous les XML d'un dossier dans un seul tableau |
-| POSITION_INTRODD | Colonne indiquant si l'introducteur du DD précède (ANTE) ou suit (POST) la PPI dans le même paragraphe |
-| PPI | Phrase préfabriquée des interactions |
-| NONPPI | Segment non PPI |
-| DD | Discours direct |
-| INTRODD | Introducteur du discours direct |
-| VDD | Verbe introducteur du discours direct |
-| EXPANSION | Expansion de l'introducteur du discours direct |
-| MD | Marqueur du discours |
-| MOD | Modifieur |
-| APP | Appellatif |
+**Colonne Excel:**
+```
+INTRODD_2_zebbi_text
+```
+
+**Résultat XML:**
+```xml
+<INTRODD position="ante">
+  <VDD type="parole">dit-il</VDD>
+  <zebbi>nouveau contenu</zebbi>    ← CRÉÉ automatiquement
+</INTRODD>
+```
+
+---
+
+#### Exemple: Modifier un attribut
+
+**Colonne Excel:**
+```
+VDD_type     →  "cognition"
+```
+
+**Résultat XML:**
+```xml
+<VDD type="cognition">dit</VDD>    ← Attribut modifié
+```
+
+---
+
+#### Nommage des colonnes et ordre
+
+**Syntaxe:**
+```
+[TAG]_[INDEX]_[TAG]_[ATTRIBUTE|_text]
+```
+
+| Colonne | Signification |
+|---------|---------------|
+| `INTRODD_text` | 1ère INTRODD, texte |
+| `INTRODD_2_text` | 2ème INTRODD, texte |
+| `INTRODD_position` | 1ère INTRODD, attribut "position" |
+| `INTRODD_VDD_type` | VDD imbriquée dans INTRODD, attribut "type" |
+| `INTRODD_2_VDD_3_text` | 3ème VDD dans 2ème INTRODD, texte |
+
+**Important:** L'ordre des colonnes dans l'Excel ne change rien. L'ordre final suit le **schéma DTD** (ou préfixé).
+
+---
+
+#### Vérification après reverse
+
+Le script exécute automatiquement un **test d'intégrité reverse** qui vérifie:
+- ✓ Les balises existantes sont préservées
+- ✓ Aucune perte de contenu
+- ✓ Les nouvelles balises sont créées correctement
+- ⚠️ Alertes si des données manquent
+
+```
+▶ Vérification de l'intégrité…
+  ✓ Tag 'p': 516 (inchangé)
+  ✓ Tag 'INTRODD' augmenté (125 → 126)
+  ✓ Tag 'VDD': 498 (inchangé)
+  ➕ Nouveau tag 'zebbi' (1 instance(s))
+  ✅ OK: 1 nouveau(x) tag(s) ajouté(s), aucune perte
+```
+
+---
+
+## Résumé
+
+| Fonctionnalité | Avant | Maintenant |
+|---|---|---|
+| Schéma | Préfixé fixe | Lisible depuis DTD ou préfixé |
+| Tags supportés | INTRODD, PPI, VDD... | N'importe quel XML |
+| Validation | Manuelle | Automatique (nombre, contenu) |
+| Modification | Non | Oui (mode reverse) |
+| Intégrité | - | Test avant/après reverse |
