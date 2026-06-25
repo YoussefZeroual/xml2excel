@@ -72,7 +72,6 @@ def check_counts(df, xml_path, schema_path):
     
     # Read XML
     if xml_path is None:
-    	print("Impossible d'ouvrir le fichier xml")
     	return None
     with open(xml_path) as f:
         xml = f.read()

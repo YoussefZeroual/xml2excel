@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 xml2xlsx/__init__.py
 xml2xlsx/format_excel.py
