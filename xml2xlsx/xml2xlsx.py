@@ -250,7 +250,7 @@ def reorder_columns(df, p_children):
     this stupid function used to mess up the order that was already good, its kept here just as a dummy, maybe i'd need it later. It does nothing for now
     """
     META = ['source_file', 'p_id', 'paragraph_text', 'POSITION_INTRODD']
-    print(df.columns)
+   
 
     return df
 
@@ -285,10 +285,8 @@ def main():
     input_path = args.input
     compute_position = args.compute_position
 
-    def process_rows(rows, df_path, lowercased=True):
+    def process_rows(rows, df_path, xml_path=None, lowercased=True):
         df = pd.DataFrame(rows)
-        df = df.replace('', np.nan)
-        df.dropna(axis=1, how='all', inplace=True)
         if lowercased:
             text_cols = [c for c in df.columns
                          if c.endswith('_text') and c not in NO_LOWER]
@@ -296,6 +294,8 @@ def main():
                 lambda col: col.map(
                     lambda v: v.lower() if isinstance(v, str) else v))
         df = reorder_columns(df, p_children)
+        from xml2xlsx.integrity_check import check_counts
+        check_counts(df, xml_path, args.dtd)
         format_excel(df, df_path, p_children)
         print(f"  Saved: {df_path}")
         return df
@@ -308,7 +308,7 @@ def main():
         for row in rows:
             row['source_file'] = os.path.basename(input_path)
         out = args.output or input_path.replace('.xml', '.xlsx')
-        process_rows(rows, out, lowercased=False)
+        process_rows(rows, out, xml_path=input_path,lowercased=False)
 
     elif os.path.isdir(input_path):
         xml_files = sorted(f for f in os.listdir(input_path) if f.endswith('.xml'))
@@ -324,6 +324,7 @@ def main():
                 ind_rows = [dict(r, source_file=f) for r in rows]
                 process_rows(ind_rows,
                              file_path.replace('.xml', '.xlsx'),
+                             xml_path=f,
                              lowercased=True)
             for row in rows:
                 row['source_file'] = f

@@ -154,7 +154,7 @@ class App(tk.Tk):
 
             p_children = children_map.get('p', [])
 
-            def process_rows(rows, out_path, lowercased=True):
+            def process_rows(rows, out_path, xml_path = None,lowercased=True):
                 df = pd.DataFrame(rows)
                 df = df.replace('', np.nan)
                 df.dropna(axis=1, how='all', inplace=True)
@@ -164,6 +164,8 @@ class App(tk.Tk):
                     df[text_cols] = df[text_cols].apply(
                         lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v))
                 df = reorder_columns(df, p_children)
+                from xml2xlsx.integrity_check import check_counts
+                check_counts(df, xml_path, dtd_path)
                 format_excel(df, out_path, p_children)
                 self._log(f"    ✔ {os.path.basename(out_path)}")
 
@@ -173,7 +175,7 @@ class App(tk.Tk):
                 for row in rows:
                     row['source_file'] = os.path.basename(path)
                 out = path.replace(".xml", ".xlsx")
-                process_rows(rows, out, lowercased=False)
+                process_rows(rows, out, lowercased=False,xml_path=path)
 
             # ── Dossier ───────────────────────────────────────────────────
             elif mode == "dossier":
@@ -189,11 +191,11 @@ class App(tk.Tk):
                     rows = extract_paragraphs(file_path, children_map, attribs_map, compute_position)
                     if rows and self.save_individual.get():
                         ind_rows = [dict(r, source_file=f) for r in rows]
-                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"))
+                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"),xml_path=file_path)
                     for row in rows:
                         row['source_file'] = f
                     all_rows.extend(rows)
-
+           
                 if self.save_master.get() and all_rows:
                     master_out = os.path.join(path, "master_output.xlsx")
                     process_rows(all_rows, master_out)
