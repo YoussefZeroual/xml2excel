@@ -107,7 +107,7 @@ def check_counts(df, xml_path, schema_path):
             col_ = re.sub(r'^.*?_','',col_)
         if (re.findall(r'^.*?_EXPANSION|VDD|MOD|MD',col_)) and not (re.findall(r'VDD_type|EXPANSION_type|VDD_lemme',col_)):
             col_ = re.sub(r'(^.*?_)','',col_)
-        if (not col_ == "paragraph") and (not col == "source_file"):
+        if (not col_ == "paragraph") and (not col == "source_file") and (not col == "xml_comments"):
             if col_ in df_counts.keys():
                 col_map.append((col_,col))
                 df_counts[col_] += (len(df[col].dropna()))

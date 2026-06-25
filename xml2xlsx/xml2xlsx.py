@@ -118,6 +118,10 @@ def serialize_paragraph(p_elem, skip_tags=None):
     def _serialize(elem):
         result = ''
         tag = elem.tag
+        if callable(tag):  # Extract comment with tags
+            if elem.text:
+                result += f'<!-- {elem.text} -->'
+            return result
         if tag not in skip_tags:
             attrs = ''.join(f' {k}="{v}"' for k, v in elem.attrib.items())
             result += f'<{tag}{attrs}>'
@@ -133,8 +137,6 @@ def serialize_paragraph(p_elem, skip_tags=None):
 
     raw = _serialize(p_elem)
     return ' '.join(raw.split()) if raw.strip() else None
-
-
 # ---------------------------------------------------------------------------
 # Generic recursive extraction
 # ---------------------------------------------------------------------------
@@ -196,33 +198,36 @@ def get_introdd_position(p_elem):
 # Main extraction
 # ---------------------------------------------------------------------------
 
+from lxml import etree
+
 def extract_paragraphs(xml_path, children_map, attribs_map,
                        compute_position=False):
-    tree = ET.parse(xml_path)
+    tree = etree.parse(xml_path)
     root = tree.getroot()
-
-    # Support both <text><p>…</p></text> and bare <p> at root
     paragraphs = root.findall('p') or root.findall('.//p')
-
-    # Top-level child tags of <p> (everything except p itself)
     p_children = children_map.get('p', [])
-
     rows = []
     for p in paragraphs:
-        # Attempt to extract an ID from quoted content
         full_text = ''.join(p.itertext())
         match = re.search(r'[«"]["\s]*([^"»]+)["\s]*[»"]', full_text)
         p_id = match.group(1).strip() if match else None
-
         row = {
             'p_id': p_id,
             'paragraph_text': serialize_paragraph(p),
         }
-
         if compute_position:
             row['POSITION_INTRODD'] = get_introdd_position(p)
+        
+        # Extraction des commentaires XML <!-- ... --> from this paragraph only
+        xml_comments = [
+            child.text.strip()
+            for child in p
+            if isinstance(child.tag, str) is False and 'Comment' in str(type(child))
+            and child.text
+        ]
+        row['xml_comments'] = ' | '.join(xml_comments) if xml_comments else None
 
-        # Extract each top-level child type
+        
         for child_tag in p_children:
             child_elems = p.findall(child_tag)
             child_prefix = child_tag
@@ -234,11 +239,8 @@ def extract_paragraphs(xml_path, children_map, attribs_map,
             else:
                 _fill_absent(child_tag, child_prefix,
                              children_map, attribs_map, row)
-
         rows.append(row)
-
     return rows
-
 
 # ---------------------------------------------------------------------------
 # Column ordering
