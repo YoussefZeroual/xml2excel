@@ -243,6 +243,121 @@ def extract_paragraphs(xml_path, children_map, attribs_map,
     return rows
 
 # ---------------------------------------------------------------------------
+# Excel to XML (reverse)
+# ---------------------------------------------------------------------------
+
+def parse_column_name(col_name):
+    """Parse column name to extract element path with indices."""
+    skip_cols = {'p_id', 'paragraph_text', 'source_file', 'POSITION_INTRODD', 'xml_comments'}
+    if col_name in skip_cols:
+        return None
+    
+    parts = col_name.split('_')
+    
+    # Separate content type (text or attribute) from path
+    if parts[-1] == 'text':
+        content_parts = parts[:-1]
+        content_type = 'text'
+    else:
+        attr_name = parts[-1]
+        content_parts = parts[:-1]
+        content_type = 'attr'
+    
+    # Parse path with indices: [tag, [index], tag, [index], ...]
+    path = []
+    indices = {}  # {tag_name: index}
+    
+    i = 0
+    while i < len(content_parts):
+        tag = content_parts[i]
+        if tag.isdigit():
+            # This is an index for the previous tag
+            if path:
+                indices[path[-1]] = int(tag)
+            i += 1
+        else:
+            path.append(tag)
+            i += 1
+    
+    result = {'path': path, 'type': content_type, 'indices': indices}
+    if content_type == 'attr':
+        result['attr_name'] = attr_name
+    return result
+
+
+def xlsx2xml(excel_path, xml_path, output_path, children_map):
+    """Read modified Excel, apply changes back to XML."""
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    
+    df = pd.read_excel(excel_path)
+    
+    for _, row in df.iterrows():
+        p_id = row.get('p_id')
+        if pd.isna(p_id):
+            continue
+        
+        paragraphs = root.findall('p') or root.findall('.//p')
+        p_elem = None
+        for p in paragraphs:
+            full_text = ''.join(p.itertext())
+            match = re.search(r'[«"]["\s]*([^"»]+)["\s]*[»"]', full_text)
+            found_id = match.group(1).strip() if match else None
+            if found_id == p_id:
+                p_elem = p
+                break
+        
+        if p_elem is None:
+            continue
+        
+        for col_name, value in row.items():
+            if pd.isna(value):
+                continue
+            
+            parsed = parse_column_name(col_name)
+            if not parsed:
+                continue
+            
+            current = p_elem
+            for tag in parsed['path']:
+                # Get the target index for this tag (0-based, INTRODD_2 = index 1)
+                target_index = parsed['indices'].get(tag, 0)
+                
+                # Find all occurrences of this tag
+                matches = current.findall(tag)
+                
+                if len(matches) > target_index:
+                    # Tag exists at this index, navigate to it
+                    elem = matches[target_index]
+                else:
+                    # Need to create new instance(s)
+                    # Create one element (assume we're filling gaps sequentially)
+                    expected_children = children_map.get(current.tag, [])
+                    
+                    if tag in expected_children:
+                        # Calculate insertion position based on schema order
+                        insert_index = 0
+                        for expected_tag in expected_children:
+                            if expected_tag == tag:
+                                break
+                            insert_index += len(current.findall(expected_tag))
+                    else:
+                        # Tag not in schema, append at end
+                        insert_index = len(current)
+                    
+                    elem = ET.Element(tag)
+                    current.insert(insert_index, elem)
+                
+                current = elem
+            
+            # Set text or attribute
+            if parsed['type'] == 'text':
+                current.text = str(value)
+            else:
+                current.attrib[parsed['attr_name']] = str(value)
+    
+    tree.write(output_path, encoding='utf-8')
+# ---------------------------------------------------------------------------
 # Column ordering
 # ---------------------------------------------------------------------------
 

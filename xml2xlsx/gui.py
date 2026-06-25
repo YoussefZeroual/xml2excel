@@ -8,45 +8,69 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("xml2xlsx — Convertisseur XML vers Excel")
-        self.resizable(False, False)
-        self.configure(padx=20, pady=20)
+        self.resizable(True, True)
+        self.configure(padx=10, pady=10)
+
+        # Configure main grid: left (controls), right (log)
+        self.columnconfigure(0, weight=0)  # Controls column - fixed
+        self.columnconfigure(1, weight=1)  # Log column - expandable
+        self.rowconfigure(0, weight=1)     # Make rows expandable for log
+
+        # ════════════════════════════════════════════════════════════════════
+        # LEFT SIDE: CONTROLS
+        # ════════════════════════════════════════════════════════════════════
+        left_frame = ttk.Frame(self)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
         # ── Mode de sélection ──────────────────────────────────────────────
-        mode_frame = ttk.LabelFrame(self, text="Source d'entrée", padding=10)
-        mode_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        mode_frame = ttk.LabelFrame(left_frame, text="Source d'entrée", padding=10)
+        mode_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
         self.mode = tk.StringVar(value="dossier")
         ttk.Radiobutton(mode_frame, text="Dossier", variable=self.mode,
-                        value="dossier", command=self._update_mode).grid(row=0, column=0, padx=8)
+                        value="dossier", command=self._update_mode).grid(row=0, column=0, padx=4)
         ttk.Radiobutton(mode_frame, text="Fichier XML", variable=self.mode,
-                        value="xml", command=self._update_mode).grid(row=0, column=1, padx=8)
+                        value="xml", command=self._update_mode).grid(row=0, column=1, padx=4)
+        ttk.Radiobutton(mode_frame, text="Réécrire XML", variable=self.mode,
+                        value="reverse", command=self._update_mode).grid(row=0, column=2, padx=4)
 
         # ── Chemin XML ────────────────────────────────────────────────────
-        path_frame = ttk.LabelFrame(self, text="Chemin", padding=10)
-        path_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        path_frame = ttk.LabelFrame(left_frame, text="Chemins", padding=10)
+        path_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         path_frame.columnconfigure(0, weight=1)
 
         self.path_var = tk.StringVar()
-        ttk.Entry(path_frame, textvariable=self.path_var, width=55).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(path_frame, text="Parcourir…", command=self._browse_input).grid(row=0, column=1)
+        self.path_label = ttk.Label(path_frame, text="")
+        self.path_label.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Entry(path_frame, textvariable=self.path_var, width=35).grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        ttk.Button(path_frame, text="Parcourir…", command=self._browse_input).grid(row=1, column=1, padx=(4, 0))
+
+        # ── XML original (pour mode reverse) ───────────────────────────────
+        self.original_xml_var = tk.StringVar()
+        self.original_xml_label = ttk.Label(path_frame, text="XML original (reverse)")
+        self.original_xml_label.grid(row=2, column=0, sticky="w", pady=(8, 4))
+        self.original_xml_entry = ttk.Entry(path_frame, textvariable=self.original_xml_var, width=35)
+        self.original_xml_entry.grid(row=3, column=0, sticky="ew")
+        self.original_xml_button = ttk.Button(path_frame, text="Parcourir…", command=self._browse_original_xml)
+        self.original_xml_button.grid(row=3, column=1, padx=(4, 0))
 
         # ── DTD (optionnel) ───────────────────────────────────────────────
-        dtd_frame = ttk.LabelFrame(self, text="Schéma DTD (optionnel)", padding=10)
-        dtd_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        dtd_frame = ttk.LabelFrame(left_frame, text="Schéma DTD (optionnel)", padding=10)
+        dtd_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         dtd_frame.columnconfigure(0, weight=1)
 
         self.dtd_var = tk.StringVar()
-        ttk.Entry(dtd_frame, textvariable=self.dtd_var, width=55).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(dtd_frame, text="Parcourir…", command=self._browse_dtd).grid(row=0, column=1)
+        ttk.Entry(dtd_frame, textvariable=self.dtd_var, width=35).grid(row=0, column=0, sticky="ew")
+        ttk.Button(dtd_frame, text="Parcourir…", command=self._browse_dtd).grid(row=0, column=1, padx=(4, 0))
 
         # ── Options ───────────────────────────────────────────────────────
-        opt_frame = ttk.LabelFrame(self, text="Options", padding=10)
-        opt_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+        opt_frame = ttk.LabelFrame(left_frame, text="Options", padding=10)
+        opt_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         self.save_individual = tk.BooleanVar(value=True)
         self.cb_individual = ttk.Checkbutton(
             opt_frame,
-            text="Générer un fichier XLSX individuel par fichier XML",
+            text="XLSX individuel par fichier",
             variable=self.save_individual
         )
         self.cb_individual.grid(row=0, column=0, sticky="w")
@@ -54,7 +78,7 @@ class App(tk.Tk):
         self.save_master = tk.BooleanVar(value=True)
         self.cb_master = ttk.Checkbutton(
             opt_frame,
-            text="Générer un fichier XLSX maître (fusion de tous les fichiers)",
+            text="Fichier XLSX maître",
             variable=self.save_master
         )
         self.cb_master.grid(row=1, column=0, sticky="w")
@@ -62,25 +86,29 @@ class App(tk.Tk):
         self.compute_position = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             opt_frame,
-            text="Calculer la colonne POSITION_INTRODD",
+            text="Calculer POSITION_INTRODD",
             variable=self.compute_position
         ).grid(row=2, column=0, sticky="w")
 
         # ── Lancer ────────────────────────────────────────────────────────
-        self.run_btn = ttk.Button(self, text="▶  Lancer la conversion", command=self._run)
-        self.run_btn.grid(row=4, column=0, columnspan=3, pady=(0, 10))
+        self.run_btn = ttk.Button(left_frame, text="▶  Lancer", command=self._run, width=20)
+        self.run_btn.grid(row=4, column=0, pady=(0, 10), sticky="ew")
 
         # ── Barre de progression ──────────────────────────────────────────
-        self.progress = ttk.Progressbar(self, mode="indeterminate", length=400)
-        self.progress.grid(row=5, column=0, columnspan=3, pady=(0, 8))
+        self.progress = ttk.Progressbar(left_frame, mode="indeterminate", length=200)
+        self.progress.grid(row=5, column=0, sticky="ew")
 
-        # ── Journal ───────────────────────────────────────────────────────
+        # ════════════════════════════════════════════════════════════════════
+        # RIGHT SIDE: LOG
+        # ════════════════════════════════════════════════════════════════════
         log_frame = ttk.LabelFrame(self, text="Journal", padding=6)
-        log_frame.grid(row=6, column=0, columnspan=3, sticky="ew")
+        log_frame.grid(row=0, column=1, sticky="nsew")
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
 
-        self.log = tk.Text(log_frame, height=10, width=60, state="disabled",
-                           font=("Courier", 9), bg="#1e1e1e", fg="#d4d4d4",
-                           insertbackground="white")
+        self.log = tk.Text(log_frame, height=25, width=100, state="disabled",
+                           font=("Courier", 10), bg="#1e1e1e", fg="#d4d4d4",
+                           insertbackground="white", wrap=tk.WORD)
         scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
         self.log.configure(yscrollcommand=scroll.set)
         self.log.grid(row=0, column=0, sticky="nsew")
@@ -91,14 +119,39 @@ class App(tk.Tk):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _update_mode(self):
-        folder_only = self.mode.get() == "dossier"
-        state = "normal" if folder_only else "disabled"
-        self.cb_individual.configure(state=state)
-        self.cb_master.configure(state=state)
+        mode = self.mode.get()
+        if mode == "dossier":
+            self.path_label.configure(text="Dossier XML")
+            self.cb_individual.configure(state="normal")
+            self.cb_master.configure(state="normal")
+            self.original_xml_var.set("")
+            self.original_xml_entry.configure(state="disabled")
+            self.original_xml_button.configure(state="disabled")
+            self.original_xml_label.configure(foreground="gray")
+        elif mode == "xml":
+            self.path_label.configure(text="Fichier XML")
+            self.cb_individual.configure(state="disabled")
+            self.cb_master.configure(state="disabled")
+            self.original_xml_var.set("")
+            self.original_xml_entry.configure(state="disabled")
+            self.original_xml_button.configure(state="disabled")
+            self.original_xml_label.configure(foreground="gray")
+        elif mode == "reverse":
+            self.path_label.configure(text="Fichier Excel modifié")
+            self.cb_individual.configure(state="disabled")
+            self.cb_master.configure(state="disabled")
+            self.original_xml_entry.configure(state="normal")
+            self.original_xml_button.configure(state="normal")
+            self.original_xml_label.configure(foreground="black")
 
     def _browse_input(self):
         if self.mode.get() == "dossier":
             path = filedialog.askdirectory(title="Sélectionner un dossier")
+        elif self.mode.get() == "reverse":
+            path = filedialog.askopenfilename(
+                title="Sélectionner un fichier Excel modifié",
+                filetypes=[("Fichiers Excel", "*.xlsx"), ("Tous les fichiers", "*.*")]
+            )
         else:
             path = filedialog.askopenfilename(
                 title="Sélectionner un fichier XML",
@@ -115,6 +168,14 @@ class App(tk.Tk):
         if path:
             self.dtd_var.set(path)
 
+    def _browse_original_xml(self):
+        path = filedialog.askopenfilename(
+            title="Sélectionner le fichier XML original",
+            filetypes=[("Fichiers XML", "*.xml"), ("Tous les fichiers", "*.*")]
+        )
+        if path:
+            self.original_xml_var.set(path)
+
     def _log(self, msg):
         self.log.configure(state="normal")
         self.log.insert("end", msg + "\n")
@@ -126,6 +187,13 @@ class App(tk.Tk):
         if not path:
             messagebox.showwarning("Chemin manquant", "Veuillez sélectionner un fichier ou un dossier.")
             return
+        
+        if self.mode.get() == "reverse":
+            xml_path = self.original_xml_var.get().strip()
+            if not xml_path:
+                messagebox.showwarning("XML original manquant", "Veuillez sélectionner le fichier XML original.")
+                return
+        
         self.run_btn.configure(state="disabled")
         self.progress.start(10)
         self._log(f"▶ Démarrage… ({path})")
@@ -135,7 +203,7 @@ class App(tk.Tk):
         try:
             from xml2xlsx.xml2xlsx import (
                 parse_dtd, extract_paragraphs, reorder_columns,
-                PREFAB_CHILDREN, PREFAB_ATTRIBS, NO_LOWER
+                PREFAB_CHILDREN, PREFAB_ATTRIBS, NO_LOWER, xlsx2xml
             )
             from xml2xlsx.format_excel import format_excel
             import pandas as pd
@@ -154,7 +222,7 @@ class App(tk.Tk):
 
             p_children = children_map.get('p', [])
 
-            def process_rows(rows, out_path, xml_path = None,lowercased=True):
+            def process_rows(rows, out_path, xml_path=None, lowercased=True):
                 df = pd.DataFrame(rows)
                 df = df.replace('', np.nan)
                 df.dropna(axis=1, how='all', inplace=True)
@@ -164,18 +232,45 @@ class App(tk.Tk):
                     df[text_cols] = df[text_cols].apply(
                         lambda col: col.map(lambda v: v.lower() if isinstance(v, str) else v))
                 df = reorder_columns(df, p_children)
+                
+                # Integrity check - capture messages for GUI log
                 from xml2xlsx.integrity_check import check_counts
-                check_counts(df, xml_path, dtd_path)
+                messages = check_counts(df, xml_path, dtd_path)
+                for msg in messages:
+                    self._log(f"    {msg}")
+                
                 format_excel(df, out_path, p_children)
                 self._log(f"    ✔ {os.path.basename(out_path)}")
 
+            # ── Mode reverse ──────────────────────────────────────────────
+            if mode == "reverse":
+                excel_path = path
+                xml_path = self.original_xml_var.get().strip()
+                if not xml_path:
+                    self._log("✘ Fichier XML original requis.")
+                    return
+                output_path = xml_path.replace('.xml', '_updated.xml')
+                self._log(f"▶ Application des modifications Excel à XML…")
+                xlsx2xml(excel_path, xml_path, output_path, children_map)
+                self._log(f"✔ Fichier XML mis à jour : {output_path}")
+                
+                # Integrity check for reverse mode
+                self._log("\n▶ Vérification de l'intégrité…")
+                from xml2xlsx.integrity_check_reverse import check_reverse_integrity
+                result = check_reverse_integrity(xml_path, output_path, children_map)
+                for msg in result['messages']:
+                    self._log(f"  {msg}")
+                
+                if not result['valid']:
+                    self._log("\n⚠️  ATTENTION: Des problèmes ont été détectés!")
+
             # ── Fichier XML unique ─────────────────────────────────────────
-            if mode == "xml":
+            elif mode == "xml":
                 rows = extract_paragraphs(path, children_map, attribs_map, compute_position)
                 for row in rows:
                     row['source_file'] = os.path.basename(path)
                 out = path.replace(".xml", ".xlsx")
-                process_rows(rows, out, lowercased=False,xml_path=path)
+                process_rows(rows, out, lowercased=False, xml_path=path)
 
             # ── Dossier ───────────────────────────────────────────────────
             elif mode == "dossier":
@@ -191,7 +286,7 @@ class App(tk.Tk):
                     rows = extract_paragraphs(file_path, children_map, attribs_map, compute_position)
                     if rows and self.save_individual.get():
                         ind_rows = [dict(r, source_file=f) for r in rows]
-                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"),xml_path=file_path)
+                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"), xml_path=file_path)
                     for row in rows:
                         row['source_file'] = f
                     all_rows.extend(rows)
