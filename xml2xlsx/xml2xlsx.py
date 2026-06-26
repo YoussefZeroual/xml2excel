@@ -207,18 +207,18 @@ def extract_paragraphs(xml_path, children_map, attribs_map,
     paragraphs = root.findall('p') or root.findall('.//p')
     p_children = children_map.get('p', [])
     rows = []
-    for p in paragraphs:
+    for p_index, p in enumerate(paragraphs):
         full_text = ''.join(p.itertext())
         match = re.search(r'[«"]["\s]*([^"»]+)["\s]*[»"]', full_text)
         p_id = match.group(1).strip() if match else None
         row = {
+            'p_index': p_index,
             'p_id': p_id,
             'paragraph_text': serialize_paragraph(p),
         }
         if compute_position:
             row['POSITION_INTRODD'] = get_introdd_position(p)
-        
-        # Extraction des commentaires XML <!-- ... --> from this paragraph only
+
         xml_comments = [
             child.text.strip()
             for child in p
@@ -227,7 +227,6 @@ def extract_paragraphs(xml_path, children_map, attribs_map,
         ]
         row['xml_comments'] = ' | '.join(xml_comments) if xml_comments else None
 
-        
         for child_tag in p_children:
             child_elems = p.findall(child_tag)
             child_prefix = child_tag
@@ -289,74 +288,92 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
     """Read modified Excel, apply changes back to XML."""
     tree = ET.parse(xml_path)
     root = tree.getroot()
-    
+
     df = pd.read_excel(excel_path)
-    
+    paragraphs = root.findall('p') or root.findall('.//p')
+    has_p_index = 'p_index' in df.columns
+
     for _, row in df.iterrows():
         p_id = row.get('p_id')
         if pd.isna(p_id):
             continue
-        
-        paragraphs = root.findall('p') or root.findall('.//p')
+
+        # Locate the target <p> element
         p_elem = None
-        for p in paragraphs:
-            full_text = ''.join(p.itertext())
-            match = re.search(r'[«"]["\s]*([^"»]+)["\s]*[»"]', full_text)
-            found_id = match.group(1).strip() if match else None
-            if found_id == p_id:
-                p_elem = p
-                break
-        
+        if has_p_index and not pd.isna(row.get('p_index')):
+            idx = int(row['p_index'])
+            if idx < len(paragraphs):
+                p_elem = paragraphs[idx]
+        if p_elem is None:
+            # Fallback: match by p_id (legacy Excel without p_index)
+            for p in paragraphs:
+                full_text = ''.join(p.itertext())
+                match = re.search(r'[«"]["\s]*([^"»]+)["\s]*[»"]', full_text)
+                found_id = match.group(1).strip() if match else None
+                if found_id == p_id:
+                    p_elem = p
+                    break
+
         if p_elem is None:
             continue
-        
+
+        # Pre-compute columns that have children → skip their _text
+        non_empty_cols = {c for c, v in row.items() if not pd.isna(v)}
+        has_children = set()
+        for col in non_empty_cols:
+            parsed = parse_column_name(col)
+            if not parsed or parsed['type'] != 'text':
+                continue
+            prefix = '_'.join(col.split('_')[:-1])
+            for other in non_empty_cols:
+                if other != col and other.startswith(prefix + '_'):
+                    has_children.add(col)
+                    break
+
         for col_name, value in row.items():
             if pd.isna(value):
                 continue
-            
+
             parsed = parse_column_name(col_name)
             if not parsed:
                 continue
-            
+
+            if parsed['type'] == 'text' and col_name in has_children:
+                continue
+
             current = p_elem
             for tag in parsed['path']:
-                # Get the target index for this tag (0-based, INTRODD_2 = index 1)
                 target_index = parsed['indices'].get(tag, 0)
-                
-                # Find all occurrences of this tag
                 matches = current.findall(tag)
-                
+
                 if len(matches) > target_index:
-                    # Tag exists at this index, navigate to it
                     elem = matches[target_index]
+                elif len(matches) > 0:
+                    elem = matches[-1]
                 else:
-                    # Need to create new instance(s)
-                    # Create one element (assume we're filling gaps sequentially)
                     expected_children = children_map.get(current.tag, [])
-                    
                     if tag in expected_children:
-                        # Calculate insertion position based on schema order
                         insert_index = 0
                         for expected_tag in expected_children:
                             if expected_tag == tag:
                                 break
                             insert_index += len(current.findall(expected_tag))
                     else:
-                        # Tag not in schema, append at end
                         insert_index = len(current)
-                    
                     elem = ET.Element(tag)
+                    print(f"[DEBUG] Création de <{tag}> dans <{current.tag}> (p_id={p_id})")
                     current.insert(insert_index, elem)
-                
+
                 current = elem
-            
-            # Set text or attribute
+
             if parsed['type'] == 'text':
                 current.text = str(value)
             else:
                 current.attrib[parsed['attr_name']] = str(value)
-    
+
     tree.write(output_path, encoding='utf-8')
+
+
 # ---------------------------------------------------------------------------
 # Column ordering
 # ---------------------------------------------------------------------------

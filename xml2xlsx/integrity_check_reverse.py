@@ -13,17 +13,15 @@ def count_elements(root, tag=None):
         counts[elem.tag] += 1
     return dict(counts)
 
-
 def get_all_text(root):
-    """Recursively get all non-empty text content from elements."""
     texts = set()
     for elem in root.iter():
-        text = ''.join(elem.itertext()).strip()
-        if text and elem.tag not in {'p'}:  # Skip container-only elements
+        if elem.tag == 'p':
+            continue
+        text = ' '.join((elem.text or '').split())
+        if text:
             texts.add(text)
     return texts
-
-
 def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     """
     Compare original and updated XML after reverse injection.
