@@ -293,7 +293,7 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
     df = pd.read_excel(excel_path)
     paragraphs = root.findall('p') or root.findall('.//p')
     has_p_index = 'p_index' in df.columns
-
+    print(parse_column_name('PPI_TERMA_text'))
     for _, row in df.iterrows():
         p_id = row.get('p_id')
         if pd.isna(p_id):
@@ -327,7 +327,7 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 continue
             prefix = '_'.join(col.split('_')[:-1])
             for other in non_empty_cols:
-                if other != col and other.startswith(prefix + '_'):
+                if other != col and other.startswith(prefix + '_') and other.endswith('_text'):
                     has_children.add(col)
                     break
 
@@ -371,6 +371,7 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 current = elem
 
             if parsed['type'] == 'text':
+                print(f"setting text '{value}' on {current.tag}")
                 current.text = str(value)
             else:
                 current.attrib[parsed['attr_name']] = str(value)
