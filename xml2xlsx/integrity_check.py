@@ -82,7 +82,7 @@ def check_counts(df, xml_path, schema_path):
     
     # Read schema and extract tags
     try:
-        with open(schema_path) as f:
+        with open(schema_path,encoding="utf-8") as f:
             schema = f.read()
     except (FileNotFoundError, TypeError):
         # schema_path is None or file doesn't exist
@@ -97,7 +97,7 @@ def check_counts(df, xml_path, schema_path):
         return messages
     
     try:
-        with open(xml_path) as f:
+        with open(xml_path,encoding="utf-8") as f:
             xml = f.read()
     except FileNotFoundError:
         messages.append(f"Erreur: fichier XML non trouvé: {xml_path}")
