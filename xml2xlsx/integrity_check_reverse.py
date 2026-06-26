@@ -6,10 +6,11 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 
-def count_elements(root, tag=None):
-    """Recursively count all elements by tag. Returns {tag: count}"""
+def count_elements(root):
     counts = defaultdict(int)
     for elem in root.iter():
+        if callable(elem.tag):  # skip comments
+            continue
         counts[elem.tag] += 1
     return dict(counts)
 
@@ -35,8 +36,9 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     }
     """
     try:
-        orig_tree = ET.parse(original_xml_path)
-        upd_tree = ET.parse(updated_xml_path)
+        from lxml import etree
+        orig_tree = etree.parse(original_xml_path)
+        upd_tree = etree.parse(updated_xml_path)
     except ET.ParseError as e:
         return {
             'valid': False,
@@ -47,11 +49,12 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
         }
     
     orig_root = orig_tree.getroot()
+    print(len(orig_root.findall('p')))
     upd_root = upd_tree.getroot()
-    
+    print(len(upd_root.findall('p')))
     orig_counts = count_elements(orig_root)
     upd_counts = count_elements(upd_root)
-    
+    print([(elem.tag, elem.getparent().tag) for elem in upd_root.iter() if elem.tag == 'p'][:10])
     orig_text = get_all_text(orig_root)
     upd_text = get_all_text(upd_root)
     
@@ -62,7 +65,7 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     # ── Check original tags still exist ────────────────────────────────────
     for tag, orig_count in orig_counts.items():
         upd_count = upd_counts.get(tag, 0)
-        
+        #print(dict(upd_counts))
         if upd_count == 0:
             # Tag was completely removed
             messages.append(f"❌ Tag '{tag}' supprimé ({orig_count} → 0)")

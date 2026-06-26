@@ -247,7 +247,7 @@ def extract_paragraphs(xml_path, children_map, attribs_map,
 
 def parse_column_name(col_name):
     """Parse column name to extract element path with indices."""
-    skip_cols = {'p_id', 'paragraph_text', 'source_file', 'POSITION_INTRODD', 'xml_comments'}
+    skip_cols = {'p_id', 'paragraph_text', 'source_file', 'POSITION_INTRODD', 'xml_comments','p_index'}
     if col_name in skip_cols:
         return None
     
@@ -286,7 +286,8 @@ def parse_column_name(col_name):
 
 def xlsx2xml(excel_path, xml_path, output_path, children_map):
     """Read modified Excel, apply changes back to XML."""
-    tree = ET.parse(xml_path)
+    from lxml import etree
+    tree = etree.parse(xml_path)
     root = tree.getroot()
 
     df = pd.read_excel(excel_path)
@@ -360,8 +361,11 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                             insert_index += len(current.findall(expected_tag))
                     else:
                         insert_index = len(current)
-                    elem = ET.Element(tag)
-                    print(f"[DEBUG] Création de <{tag}> dans <{current.tag}> (p_id={p_id})")
+                    elem = etree.Element(tag)
+
+                   	
+                    elem = etree.Element(tag)
+                    #print(f"[DEBUG] Création de <{tag}> dans <{current.tag}> (p_id={p_id})")
                     current.insert(insert_index, elem)
 
                 current = elem
@@ -370,9 +374,11 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 current.text = str(value)
             else:
                 current.attrib[parsed['attr_name']] = str(value)
-
-    tree.write(output_path, encoding='utf-8')
-
+     
+    tree.write(output_path, encoding='utf-8', xml_declaration=True)
+    import subprocess
+    result = subprocess.run(['grep', '-c', '<p', output_path], capture_output=True, text=True)
+     
 
 # ---------------------------------------------------------------------------
 # Column ordering
