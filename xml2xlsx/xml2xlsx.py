@@ -447,7 +447,11 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 occurrence = same_value_count
                 parent_of_current = current.getparent()
                 if parent_of_current is not None:
-                    wrapped = wrap_text_in_tag(parent_of_current, current.tag, value_str, occurrence)
+                    if not elem_was_created:
+                        if col_name not in has_children and not list(current):
+                            current.text = value_str
+                        else:
+                            wrapped = wrap_text_in_tag(parent_of_current, current.tag, value_str, occurrence)
                     if wrapped is not None:
                         if elem_was_created and current in list(parent_of_current):
                             parent_of_current.remove(current)
