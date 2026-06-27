@@ -284,6 +284,63 @@ def parse_column_name(col_name):
     return result
 
 
+
+def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
+    """
+    Find search_text (case-insensitive) in parent_elem's text nodes and wrap
+    it in a new child element <new_tag>. Uses original casing in the output.
+    occurrence: 0-based index for repeated matches across all text nodes.
+    Returns the new element or None if not found.
+    """
+    from lxml import etree
+
+    search_lower = search_text.lower()
+    match_count = 0
+
+    def text_nodes(elem):
+        nodes = []
+        if elem.text:
+            nodes.append(("text", elem, None))
+        for i, child in enumerate(elem):
+            if child.tail:
+                nodes.append(("tail", elem, i))
+        return nodes
+
+    for node_type, holder, child_idx in text_nodes(parent_elem):
+        if node_type == "text":
+            text = holder.text
+        else:
+            text = holder[child_idx].tail
+
+        text_lower = text.lower()
+        start = 0
+        while True:
+            pos = text_lower.find(search_lower, start)
+            if pos == -1:
+                break
+            if match_count == occurrence:
+                before = text[:pos]
+                matched = text[pos:pos + len(search_text)]
+                after = text[pos + len(search_text):]
+
+                new_elem = etree.Element(new_tag)
+                new_elem.text = matched
+                new_elem.tail = after
+
+                if node_type == "text":
+                    holder.text = before
+                    holder.insert(0, new_elem)
+                else:
+                    holder[child_idx].tail = before
+                    holder.insert(child_idx + 1, new_elem)
+
+                return new_elem
+            match_count += 1
+            start = pos + 1
+
+    return None
+
+
 def xlsx2xml(excel_path, xml_path, output_path, children_map):
     """Read modified Excel, apply changes back to XML."""
     from lxml import etree
@@ -371,8 +428,22 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 current = elem
 
             if parsed['type'] == 'text':
-                print(f"setting text '{value}' on {current.tag}")
-                current.text = str(value)
+                # If element was just created (no existing text/children), try to
+                # wrap the value inside the parent's text rather than appending.
+                value_str = str(value)
+                # occurrence: _2 -> 1, _3 -> 2, default 0
+                occurrence = parsed['indices'].get(parsed['path'][-1], 0)
+                parent_of_current = current.getparent()
+                if parent_of_current is not None and not current.text and len(current) == 0:
+                    wrapped = wrap_text_in_tag(parent_of_current, current.tag, value_str, occurrence)
+                    if wrapped is not None:
+                        # Remove the empty element we inserted, wrap_text_in_tag made a new one
+                        if current in list(parent_of_current):
+                            parent_of_current.remove(current)
+                    else:
+                        current.text = value_str
+                else:
+                    current.text = value_str
             else:
                 current.attrib[parsed['attr_name']] = str(value)
      
@@ -412,6 +483,9 @@ def main():
     parser.add_argument('--no-individual', dest='no_individual',
                         default=False, action='store_true',
                         help="Skip individual per-file xlsx (folder mode only)")
+    parser.add_argument('--reverse', dest='reverse', default=None,
+                        metavar='ORIGINAL_XML',
+                        help="Reverse mode: inject Excel back into XML. Pass original .xml path.")
     args = parser.parse_args()
 
     # Load schema
@@ -423,6 +497,22 @@ def main():
         print("[schema] Using built-in PREFAB schema")
 
     p_children = children_map.get('p', [])
+
+    # ── Reverse mode ──────────────────────────────────────────────────────
+    if args.reverse:
+        output_path = args.reverse.replace('.xml', '_updated.xml')
+        print(f"  Applying Excel → XML: {args.input} → {output_path}")
+        xlsx2xml(args.input, args.reverse, output_path, children_map)
+        print(f"  Saved: {output_path}")
+
+        from xml2xlsx.integrity_check_reverse import check_reverse_integrity
+        print("\n▶ Vérification de l'intégrité…")
+        result = check_reverse_integrity(args.reverse, output_path, children_map)
+        for msg in result['messages']:
+            print(f"  {msg}")
+        if not result['valid']:
+            print("\n⚠️  ATTENTION: Des problèmes ont été détectés!")
+        sys.exit(0)
     input_path = args.input
     compute_position = args.compute_position
 
@@ -465,7 +555,7 @@ def main():
                 ind_rows = [dict(r, source_file=f) for r in rows]
                 process_rows(ind_rows,
                              file_path.replace('.xml', '.xlsx'),
-                             xml_path=f,
+                             xml_path=file_path,
                              lowercased=False)
             for row in rows:
                 row['source_file'] = f

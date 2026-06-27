@@ -49,12 +49,9 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
         }
     
     orig_root = orig_tree.getroot()
-    print(len(orig_root.findall('p')))
     upd_root = upd_tree.getroot()
-    print(len(upd_root.findall('p')))
     orig_counts = count_elements(orig_root)
     upd_counts = count_elements(upd_root)
-    print([(elem.tag, elem.getparent().tag) for elem in upd_root.iter() if elem.tag == 'p'][:10])
     orig_text = get_all_text(orig_root)
     upd_text = get_all_text(upd_root)
     
@@ -65,7 +62,6 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     # ── Check original tags still exist ────────────────────────────────────
     for tag, orig_count in orig_counts.items():
         upd_count = upd_counts.get(tag, 0)
-        #print(dict(upd_counts))
         if upd_count == 0:
             # Tag was completely removed
             messages.append(f"❌ Tag '{tag}' supprimé ({orig_count} → 0)")
