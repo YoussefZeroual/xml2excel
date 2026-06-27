@@ -289,7 +289,7 @@ class App(tk.Tk):
                     rows = extract_paragraphs(file_path, children_map, attribs_map, compute_position)
                     if rows and self.save_individual.get():
                         ind_rows = [dict(r, source_file=f) for r in rows]
-                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"), xml_path=file_path)
+                        process_rows(ind_rows, file_path.replace(".xml", ".xlsx"), xml_path=file_path,lowercased=False)
                     for row in rows:
                         row['source_file'] = f
                     all_rows.extend(rows)

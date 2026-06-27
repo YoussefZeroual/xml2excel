@@ -466,7 +466,7 @@ def main():
                 process_rows(ind_rows,
                              file_path.replace('.xml', '.xlsx'),
                              xml_path=f,
-                             lowercased=True)
+                             lowercased=False)
             for row in rows:
                 row['source_file'] = f
             all_rows.extend(rows)
