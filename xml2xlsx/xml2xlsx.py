@@ -316,7 +316,10 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
         text_lower = text.lower()
         start = 0
         while True:
-            pos = text_lower.find(search_lower, start)
+            m = re.search(r'(?<!\S)' + re.escape(search_lower), text_lower[start:])
+            if m is None:
+                break
+            pos = start + m.start()
             if pos == -1:
                 break
             if match_count == occurrence:
