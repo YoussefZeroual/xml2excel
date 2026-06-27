@@ -382,9 +382,13 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
             parsed = parse_column_name(col)
             if not parsed or parsed['type'] != 'text':
                 continue
-            prefix = '_'.join(col.split('_')[:-1])
             for other in non_empty_cols:
-                if other != col and other.startswith(prefix + '_') and other.endswith('_text'):
+                if other == col:
+                    continue
+                other_parsed = parse_column_name(other)
+                if (other_parsed and other_parsed['type'] == 'text'
+                        and other_parsed['path'][:len(parsed['path'])] == parsed['path']
+                        and len(other_parsed['path']) > len(parsed['path'])):
                     has_children.add(col)
                     break
 
@@ -396,18 +400,18 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
             if not parsed:
                 continue
 
-            if parsed['type'] == 'text' and col_name in has_children:
-                continue
-
             current = p_elem
+            elem_was_created = False
             for tag in parsed['path']:
                 target_index = parsed['indices'].get(tag, 0)
                 matches = current.findall(tag)
 
                 if len(matches) > target_index:
                     elem = matches[target_index]
+                    elem_was_created = False
                 elif len(matches) > 0:
                     elem = matches[-1]
+                    elem_was_created = False
                 else:
                     expected_children = children_map.get(current.tag, [])
                     if tag in expected_children:
@@ -419,31 +423,42 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                     else:
                         insert_index = len(current)
                     elem = etree.Element(tag)
-
-                   	
-                    elem = etree.Element(tag)
-                    #print(f"[DEBUG] Création de <{tag}> dans <{current.tag}> (p_id={p_id})")
                     current.insert(insert_index, elem)
+                    elem_was_created = True
 
                 current = elem
 
             if parsed['type'] == 'text':
-                # If element was just created (no existing text/children), try to
-                # wrap the value inside the parent's text rather than appending.
                 value_str = str(value)
-                # occurrence: _2 -> 1, _3 -> 2, default 0
-                occurrence = parsed['indices'].get(parsed['path'][-1], 0)
+                # occurrence = how many prior columns share same tag and same text value
+                # _2/_3 means second/third element, NOT second occurrence of the word
+                tag = parsed['path'][-1]
+                same_value_count = 0
+                for prev_col, prev_val in row.items():
+                    if prev_col == col_name:
+                        break
+                    if pd.isna(prev_val):
+                        continue
+                    prev_parsed = parse_column_name(prev_col)
+                    if (prev_parsed and prev_parsed['type'] == 'text'
+                            and prev_parsed['path'][-1] == tag
+                            and str(prev_val).lower() == value_str.lower()):
+                        same_value_count += 1
+                occurrence = same_value_count
                 parent_of_current = current.getparent()
-                if parent_of_current is not None and not current.text and len(current) == 0:
+                if parent_of_current is not None:
                     wrapped = wrap_text_in_tag(parent_of_current, current.tag, value_str, occurrence)
                     if wrapped is not None:
-                        # Remove the empty element we inserted, wrap_text_in_tag made a new one
-                        if current in list(parent_of_current):
+                        if elem_was_created and current in list(parent_of_current):
                             parent_of_current.remove(current)
                     else:
-                        current.text = value_str
+                        # Only set .text directly if element has no children
+                        # (has_children cols need wrapping but not text overwrite)
+                        if col_name not in has_children:
+                            current.text = value_str
                 else:
-                    current.text = value_str
+                    if col_name not in has_children:
+                        current.text = value_str
             else:
                 current.attrib[parsed['attr_name']] = str(value)
      

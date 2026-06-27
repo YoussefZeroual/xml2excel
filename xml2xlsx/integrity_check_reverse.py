@@ -17,12 +17,15 @@ def count_elements(root):
 def get_all_text(root):
     texts = set()
     for elem in root.iter():
+        if callable(elem.tag):  # skip comments
+            continue
         if elem.tag == 'p':
             continue
         text = ' '.join((elem.text or '').split())
         if text:
             texts.add(text)
     return texts
+
 def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     """
     Compare original and updated XML after reverse injection.
@@ -63,39 +66,19 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     for tag, orig_count in orig_counts.items():
         upd_count = upd_counts.get(tag, 0)
         if upd_count == 0:
-            # Tag was completely removed
             messages.append(f"❌ Tag '{tag}' supprimé ({orig_count} → 0)")
-            tag_changes[tag] = {
-                'original': orig_count,
-                'updated': upd_count,
-                'status': 'MISSING'
-            }
+            tag_changes[tag] = {'original': orig_count, 'updated': upd_count, 'status': 'MISSING'}
             valid = False
         elif upd_count < orig_count:
-            # Some instances removed
             messages.append(f"⚠️  Tag '{tag}' réduit ({orig_count} → {upd_count})")
-            tag_changes[tag] = {
-                'original': orig_count,
-                'updated': upd_count,
-                'status': 'CHANGED'
-            }
+            tag_changes[tag] = {'original': orig_count, 'updated': upd_count, 'status': 'CHANGED'}
             valid = False
         elif upd_count > orig_count:
-            # New instances added (expected)
             messages.append(f"✓ Tag '{tag}' augmenté ({orig_count} → {upd_count})")
-            tag_changes[tag] = {
-                'original': orig_count,
-                'updated': upd_count,
-                'status': 'OK'
-            }
+            tag_changes[tag] = {'original': orig_count, 'updated': upd_count, 'status': 'OK'}
         else:
-            # Same count
             messages.append(f"✓ Tag '{tag}': {orig_count} (inchangé)")
-            tag_changes[tag] = {
-                'original': orig_count,
-                'updated': upd_count,
-                'status': 'OK'
-            }
+            tag_changes[tag] = {'original': orig_count, 'updated': upd_count, 'status': 'OK'}
     
     # ── Check for completely new tags ──────────────────────────────────────
     new_tags = []
@@ -103,17 +86,13 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
         if tag not in orig_counts:
             new_tags.append(tag)
             messages.append(f"➕ Nouveau tag '{tag}' ({upd_count} instance(s))")
-            tag_changes[tag] = {
-                'original': 0,
-                'updated': upd_count,
-                'status': 'NEW'
-            }
+            tag_changes[tag] = {'original': 0, 'updated': upd_count, 'status': 'NEW'}
     
     # ── Check for text deletion ────────────────────────────────────────────
     deleted_text = orig_text - upd_text
     if deleted_text:
         messages.append(f"⚠️  {len(deleted_text)} élément(s) de texte supprimé(s):")
-        for text in list(deleted_text)[:5]:  # Show first 5
+        for text in list(deleted_text)[:5]:
             truncated = text[:50] + "..." if len(text) > 50 else text
             messages.append(f"    - \"{truncated}\"")
         if len(deleted_text) > 5:
