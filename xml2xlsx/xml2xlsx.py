@@ -297,7 +297,6 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
         s = s.replace('\u00ab', '«').replace('\u00bb', '»')  # guillemets (garder ou normaliser selon besoin)
         return s
     search_lower = normalize_ws(search_text).lower()
-   # print(f"[wrap] searching: {repr(search_lower[:50])}")
     match_count = 0
     def text_nodes(elem):
         nodes = []
@@ -307,7 +306,6 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
             if child.tail:
                 nodes.append(("tail", elem, i))
         return nodes
-    print(f"[wrap] parent tag: {parent_elem.tag}, text: {repr(parent_elem.text)}, children: {[c.tag for c in parent_elem]}")
     for node_type, holder, child_idx in text_nodes(parent_elem):
         if node_type == "text":
             text = normalize_ws(holder.text)
@@ -350,7 +348,6 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
     df = pd.read_excel(excel_path)
     paragraphs = root.findall('p') or root.findall('.//p')
     has_p_index = 'p_index' in df.columns
-    print(parse_column_name('PPI_TERMA_text'))
     for _, row in df.iterrows():
         p_id = row.get('p_id')
         if pd.isna(p_id):
