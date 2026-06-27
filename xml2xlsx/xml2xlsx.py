@@ -286,17 +286,19 @@ def parse_column_name(col_name):
 
 
 def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
-    """
-    Find search_text (case-insensitive) in parent_elem's text nodes and wrap
-    it in a new child element <new_tag>. Uses original casing in the output.
-    occurrence: 0-based index for repeated matches across all text nodes.
-    Returns the new element or None if not found.
-    """
     from lxml import etree
-
-    search_lower = search_text.lower()
+    import re
+    def normalize_ws(s):
+        s = re.sub(r'\s+', ' ', s).strip()
+        s = s.replace('\u00a0', ' ').replace('\u202f', ' ')  # espaces insécables
+        s = s.replace('\u2019', "'").replace('\u2018', "'")  # apostrophes typographiques
+        s = s.replace('\u2013', '-').replace('\u2014', '-')  # tirets
+        s = s.replace('\u2026', '...')                        # ellipses
+        s = s.replace('\u00ab', '«').replace('\u00bb', '»')  # guillemets (garder ou normaliser selon besoin)
+        return s
+    search_lower = normalize_ws(search_text).lower()
+   # print(f"[wrap] searching: {repr(search_lower[:50])}")
     match_count = 0
-
     def text_nodes(elem):
         nodes = []
         if elem.text:
@@ -305,13 +307,12 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
             if child.tail:
                 nodes.append(("tail", elem, i))
         return nodes
-
+    print(f"[wrap] parent tag: {parent_elem.tag}, text: {repr(parent_elem.text)}, children: {[c.tag for c in parent_elem]}")
     for node_type, holder, child_idx in text_nodes(parent_elem):
         if node_type == "text":
-            text = holder.text
+            text = normalize_ws(holder.text)
         else:
-            text = holder[child_idx].tail
-
+            text = normalize_ws(holder[child_idx].tail)
         text_lower = text.lower()
         start = 0
         while True:
@@ -320,24 +321,20 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
                 break
             if match_count == occurrence:
                 before = text[:pos]
-                matched = text[pos:pos + len(search_text)]
-                after = text[pos + len(search_text):]
-
+                matched = text[pos:pos + len(search_lower)]
+                after = text[pos + len(search_lower):]
                 new_elem = etree.Element(new_tag)
                 new_elem.text = matched
                 new_elem.tail = after
-
                 if node_type == "text":
                     holder.text = before
                     holder.insert(0, new_elem)
                 else:
                     holder[child_idx].tail = before
                     holder.insert(child_idx + 1, new_elem)
-
                 return new_elem
             match_count += 1
             start = pos + 1
-
     return None
 
 
