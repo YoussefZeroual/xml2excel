@@ -444,7 +444,13 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                             and prev_parsed['path'][-1] == tag
                             and str(prev_val).lower() == value_str.lower()):
                         same_value_count += 1
-                occurrence = same_value_count
+                import re as _re
+                occ_match = _re.search(r'_(\d+)$', value_str)
+                if occ_match:
+                    occurrence = int(occ_match.group(1)) - 1  # 1-based → 0-based
+                    value_str = value_str[:occ_match.start()]
+                else:
+                    occurrence = same_value_count
                 parent_of_current = current.getparent()
                 if parent_of_current is not None:
                     if not elem_was_created:
