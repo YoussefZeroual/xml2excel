@@ -1,153 +1,525 @@
-# Documentation — xml2xlsx v0.2.7
+# xml2xlsx
 
-## Nouveautés
-
-### 1️⃣ Schéma DTD pour plus de précision
-Le script peut maintenant lire un fichier DTD (schéma XML) pour découvrir automatiquement:
-- Les éléments et leur hiérarchie
-- Les attributs déclarés pour chaque balise
-- L'ordre correct des balises
-
-**Utilisation:**
-```
---dtd /chemin/vers/schema.dtd
-```
-
-Sans DTD, le script utilise un schéma préfixé (INTRODD, PPI, VDD...).
+**Convertisseur XML annoté vers Excel — Corpus littéraires PREFAB**
+*Version 0.2.8*
 
 ---
 
-### 2️⃣ Extraction généraliste
-Le script n'est plus limité aux balises INTRODD/PPI/VDD. Il fonctionne avec **n'importe quel XML** tant que le DTD ou le schéma préfixé est fourni.
-Le script permet également d'extraire les commentaires et de les mettre dans leur propre colonne dans le fichier Excel.
-**Exemple:** Extraire un document avec tags `<chapter>`, `<section>`, `<paragraph>`:
+## Table des matières
+
+1. [Présentation](#1-présentation)
+2. [Installation](#2-installation)
+3. [Schéma de données : DTD ou PREFAB](#3-schéma-de-données--dtd-ou-prefab)
+4. [Règle d'or : le nommage des colonnes Excel](#4-règle-dor--le-nommage-des-colonnes-excel)
+5. [Modes de fonctionnement](#5-modes-de-fonctionnement)
+   - [5.1 Fichier XML unique](#51-mode-fichier-xml-unique-xml--excel)
+   - [5.2 Dossier](#52-mode-dossier-xml--excel-traitement-par-lots)
+   - [5.3 Réécriture XML](#53-mode-réécriture-xml-excel--xml)
+6. [Cas pratiques de réécriture XML](#6-cas-pratiques-de-réécriture-xml)
+7. [Vérification d'intégrité](#7-vérification-dintégrité)
+8. [Interface graphique (GUI)](#8-interface-graphique-gui)
+9. [Interface en ligne de commande (CLI)](#9-interface-en-ligne-de-commande-cli)
+10. [Formatage Excel et colorisation](#10-formatage-excel-et-colorisation)
+11. [Récapitulatif des modes](#11-récapitulatif-des-modes)
+12. [Dépannage](#12-dépannage)
+13. [Licence](#13-licence)
+
+---
+
+## 1. Présentation
+
+xml2xlsx est un outil de conversion bidirectionnel entre fichiers XML annotés (corpus PREFAB) et tableurs Excel (`.xlsx`). Il permet d'**extraire** la structure XML vers Excel pour faciliter l'annotation et la révision, puis de **réinjecter** les modifications Excel dans le XML source.
+
+**Fonctionnalités principales :**
+
+- Extraction XML → Excel (fichier unique ou dossier entier)
+- Réécriture XML à partir d'un Excel modifié (mode reverse)
+- Détection automatique de la hiérarchie via DTD ou schéma PREFAB intégré
+- Colorisation riche des balises dans Excel
+- Vérification d'intégrité automatique après chaque conversion
+- Interface graphique (GUI) et interface en ligne de commande (CLI)
+
+---
+
+## 2. Installation
+
+### Prérequis
+
+- Python 3.8+
+- Dépendances : `openpyxl`, `pandas`, `numpy`, `lxml`, `tk`
+
+### Via pip
+
+```bash
+pip install xml2xlsx-lidilem
 ```
-$ xml2xlsx input.xml output.xlsx --dtd book.dtd
+
+### En développement
+
+```bash
+git clone <url-du-dépôt>
+cd xml2xlsx-lidilem
+pip install -e .
+```
+
+### Commandes disponibles après installation
+
+| Commande | Description |
+|---|---|
+| `xml2xlsx` | Lance le convertisseur en mode CLI |
+| `xml2xlsx-gui` | Lance l'interface graphique |
+
+---
+
+## 3. Schéma de données : DTD ou PREFAB
+
+L'outil a besoin de connaître la hiérarchie des balises XML pour générer les colonnes Excel correctes. Deux options existent.
+
+### 3.1 Schéma DTD (recommandé)
+
+Fournissez un fichier `.dtd` décrivant les éléments et leurs attributs. L'outil parse automatiquement `<!ELEMENT>` et `<!ATTLIST>` pour construire la hiérarchie dynamiquement.
+
+**Avantages :** portable, extensible, pas de modification du code source.
+
+### 3.2 Schéma PREFAB intégré (fallback)
+
+Sans DTD, l'outil utilise le schéma PREFAB codé en dur, adapté aux corpus littéraires PREFAB :
+
+| Balise parente | Enfants attendus | Attributs |
+|---|---|---|
+| `p` | INTRODD, PPI, NONPPI, MD, APP | — |
+| `INTRODD` | EXPANSION, VDD, MOD | position |
+| `PPI` | MD | decl, type, position |
+| `VDD` | EXPANSION | type, lemme |
+| `EXPANSION` | — | constr, type |
+
+> **Note :** Le mode GUI affiche `[schema] Schéma PREFAB intégré` ou `[schema] DTD chargé : chemin/vers/schema.dtd` dans le journal au démarrage.
+
+---
+
+## 4. Règle d'or : le nommage des colonnes Excel
+
+Le nom de chaque colonne encode la **hiérarchie XML** de la balise cible. Chaque niveau est séparé par un underscore (`_`). Le suffixe final indique le type de valeur :
+
+| Suffixe | Signification | Exemple |
+|---|---|---|
+| `_text` | Contenu textuel de la balise | `INTRODD_text` |
+| `_nomAttribut` | Valeur de l'attribut `nomAttribut` | `INTRODD_position` |
+| `_2`, `_3`… | 2ème, 3ème occurrence de balise répétée | `INTRODD_EXPANSION_2_text` |
+
+### Exemples de nommage
+
+| Nom de colonne | Ce que l'outil va faire |
+|---|---|
+| `INTRODD_text` | Lire/écrire le texte de `<INTRODD>` |
+| `INTRODD_position` | Lire/écrire l'attribut `position` de `<INTRODD>` |
+| `INTRODD_EXPANSION_text` | Lire/écrire le texte de `<EXPANSION>` dans `<INTRODD>` |
+| `INTRODD_EXPANSION_REL_text` | Créer/modifier `<REL>` dans `<EXPANSION>` dans `<INTRODD>` |
+| `INTRODD_EXPANSION_REL_type` | Ajouter l'attribut `type` à `<REL>` |
+| `INTRODD_EXPANSION_2_text` | Deuxième `<EXPANSION>` dans `<INTRODD>` |
+
+### Cibler une occurrence répétée dans le texte
+
+Pour cibler la Nème occurrence d'un texte répété dans une balise, ajoutez `_N` à la **valeur dans la cellule** (jamais dans le nom de la colonne). Le suffixe est retiré automatiquement avant injection dans le XML.
+
+| Valeur dans la cellule | Occurrence ciblée |
+|---|---|
+| `Vite !` | 1ère occurrence (défaut) |
+| `Vite !_2` | 2ème occurrence |
+| `Vite !_3` | 3ème occurrence |
+
+> **Règle :** Une cellule vide n'est jamais reportée. L'outil ne touche qu'aux cellules qui contiennent une valeur.
+
+---
+
+## 5. Modes de fonctionnement
+
+L'outil propose trois modes d'opération, accessibles en GUI comme en CLI.
+
+---
+
+### 5.1 Mode Fichier XML unique (XML → Excel)
+
+Convertit un seul fichier `.xml` en un tableur `.xlsx`. Le fichier Excel est créé à côté du XML source avec le même nom.
+
+**Colonnes produites :**
+
+- `source_file` — nom du fichier source
+- `p_id` — identifiant du paragraphe
+- `paragraph_text` — texte complet avec balises inline colorisées
+- Une colonne par balise et attribut détectés dans la hiérarchie
+
+#### En GUI
+
+Sélectionnez le bouton radio **Fichier XML**, puis choisissez le fichier via **Parcourir…** Cliquez sur **▶ Lancer**.
+
+Les options *XLSX individuel par fichier* et *Fichier XLSX maître* sont désactivées en ce mode (non pertinentes pour un fichier unique).
+
+#### En CLI
+
+```bash
+# Conversion simple
+xml2xlsx mon_fichier.xml
+
+# Avec sortie nommée
+xml2xlsx mon_fichier.xml resultats.xlsx
+
+# Avec DTD personnalisée
+xml2xlsx mon_fichier.xml --dtd schema.dtd
+
+# Avec calcul de POSITION_INTRODD
+xml2xlsx mon_fichier.xml --position
 ```
 
 ---
 
-### 3️⃣ Test de conformité (Integrity Check)
-Après conversion, le script compare automatiquement:
-- **Nombre de balises** en Excel vs XML
-- **Nombre d'attributs** par balise
-- **Intégrité du contenu** (texte supprimé, attributs modifiés)
+### 5.2 Mode Dossier (XML → Excel, traitement par lots)
 
-**Détecte:**
-- Cellules vides manquantes (`❌ Erreur: VDD_type: Excel=193, xml=195`)
-- Tags malformés ou supprimés
-- Désynchronisation Excel ↔ XML
+Traite tous les fichiers `.xml` d'un dossier. Produit un fichier Excel individuel par XML et/ou un fichier Excel maître consolidant tous les fichiers.
 
-> **Exemple:** Le test a détecté `❌ p: Excel=516, xml=517` — une balise `<p>` malformée à la ligne 3652 du fichier '4-cest-pas-croyable_04_06_26.xml': '<p>"«</p> 
+**Fichiers produits :**
 
-N.B: le test d'intégrité est conçu spécifiquement pour les balises INTRODD, VDD, etc., il ne supporte pas pour le moment d'autres types de corpus avec des balises différentes.
----
+- **Fichier individuel** (optionnel) : `nom_fichier.xlsx` à côté de chaque XML
+- **Fichier maître** (optionnel) : `master_output.xlsx` dans le dossier source
 
-### 4️⃣ Mode Reverse: Injecter l'Excel vers XML
+Les textes du fichier maître sont automatiquement mis en minuscules (sauf `paragraph_text`, `INTRODD_text` et quelques colonnes préservées — voir [section 10](#10-formatage-excel-et-colorisation)).
 
-Modifiez le fichier Excel, puis réinjectez les changements dans l'XML original.
+#### En GUI
 
-#### Comment utiliser le mode reverse?
+Sélectionnez le bouton radio **Dossier**, choisissez le dossier via **Parcourir…**
 
-**Étape 1: Sélectionner le mode**
+Options disponibles :
+
+- **XLSX individuel par fichier** — génère un fichier Excel par XML (coché par défaut)
+- **Fichier XLSX maître** — génère le fichier consolidé (coché par défaut)
+- **Calculer POSITION_INTRODD** — ajoute une colonne indiquant si INTRODD est avant ou après PPI (`ANTE` / `POST` / `AUTRE`)
+
+#### En CLI
+
+```bash
+# Dossier complet (individuel + maître)
+xml2xlsx /chemin/vers/dossier/
+
+# Dossier avec sortie maître nommée
+xml2xlsx /chemin/vers/dossier/ resultats_consolides.xlsx
+
+# Dossier sans fichiers individuels
+xml2xlsx /chemin/vers/dossier/ --no-individual
+
+# Dossier + DTD + calcul de position
+xml2xlsx /chemin/vers/dossier/ --dtd schema.dtd --position
 ```
-Radio: "Réécrire XML depuis Excel"
-```
-
-**Étape 2: Sélectionner le fichier Excel modifié**
-```
-Chemin: /chemin/vers/document_modifié.xlsx
-```
-
-**Étape 3: Sélectionner le XML original**
-```
-XML original: /chemin/vers/document_original.xml
-```
-
-**Étape 4: Lancer**
-```
-Cliquer "▶ Lancer"
-```
-
-Résultat: `document_original_updated.xml`
 
 ---
 
-#### Exemple: Ajouter une nouvelle balise
+### 5.3 Mode Réécriture XML (Excel → XML)
 
-**Colonne Excel:**
-```
-INTRODD_2_zebbi_text
+Lit un fichier Excel modifié et reporte les valeurs annotées dans le XML source correspondant. L'outil génère un nouveau fichier XML suffixé `_updated.xml` **sans écraser l'original**.
+
+**Principe de fonctionnement :**
+
+L'outil lit les noms de colonnes de l'Excel pour déduire la hiérarchie XML cible. Pour chaque cellule non vide :
+
+- Si la balise existe déjà dans le XML → son contenu ou attribut est mis à jour
+- Si la balise n'existe pas encore → elle est créée et insérée à la bonne position dans la hiérarchie
+- Si la valeur cellule se termine par `_N` → la Nème occurrence textuelle du mot est balisée
+
+#### En GUI
+
+Sélectionnez **Réécrire XML**. Deux champs deviennent actifs :
+
+- **Fichier Excel modifié** — le fichier `.xlsx` contenant les annotations
+- **XML original (reverse)** — le fichier `.xml` source dans lequel injecter les modifications
+
+Le DTD est optionnel mais recommandé pour les schémas hors PREFAB.
+
+#### En CLI
+
+```bash
+# Réécriture XML depuis Excel
+xml2xlsx annotations.xlsx --reverse original.xml
+
+# Avec DTD
+xml2xlsx annotations.xlsx --reverse original.xml --dtd schema.dtd
 ```
 
-**Résultat XML:**
+Le fichier de sortie est automatiquement nommé `original_updated.xml` dans le même répertoire que le XML source.
+
+---
+
+## 6. Cas pratiques de réécriture XML
+
+### Cas 1 : Ajouter une balise dans une hiérarchie profonde
+
+**Situation :** on dispose d'un XML contenant `<INTRODD>` avec une `<EXPANSION>`. On souhaite annoter la relative à l'intérieur de l'expansion en créant une balise `<REL>`.
+
+#### Étape 1 : Créer la colonne dans l'Excel
+
+La hiérarchie est `INTRODD > EXPANSION > REL`. Le nom de la colonne reflète cette hiérarchie de haut en bas :
+
+| Niveau | Balise | Nom de colonne cumulé |
+|---|---|---|
+| 1 (ancêtre) | INTRODD | `INTRODD` |
+| 2 (enfant) | EXPANSION | `INTRODD_EXPANSION` |
+| 3 (cible) | REL | `INTRODD_EXPANSION_REL` |
+| Suffixe texte | — | **`INTRODD_EXPANSION_REL_text`** ← nom final |
+
+#### Étape 2 : Renseigner la cellule
+
+Dans la colonne `INTRODD_EXPANSION_REL_text`, saisir le texte de la relative :
+
+```
+dont on reconnaît cependant l'ancienne grandeur aux vestiges des monuments
+```
+
+#### Étape 3 : Ajouter un attribut
+
+Pour qualifier la balise `<REL>` avec un attribut `type`, ajouter une colonne `INTRODD_EXPANSION_REL_type` :
+
+| Colonne Excel | Valeur saisie | Effet dans le XML |
+|---|---|---|
+| `INTRODD_EXPANSION_REL_text` | dont on reconnaît… | Crée `<REL>…</REL>` |
+| `INTRODD_EXPANSION_REL_type` | relative avec 'dont' | Ajoute `type="relative avec 'dont'"` |
+
+#### Résultat XML
+
 ```xml
-<INTRODD position="ante">
-  <VDD type="parole">dit-il</VDD>
-  <zebbi>nouveau contenu</zebbi>    ← CRÉÉ automatiquement
-</INTRODD>
+<EXPANSION constr="SN" type="verbal">
+  sur un ton de modestie forcée…,
+  <REL type="relative avec 'dont'">dont on reconnaît cependant
+  l'ancienne grandeur aux vestiges des monuments</REL>,
+  avait dû être véritablement quelque chose.
+</EXPANSION>
 ```
+
+> **Pour une deuxième relative dans la même `<EXPANSION>` :** créer la colonne `INTRODD_EXPANSION_REL_2_text`. Pour des balises enfants de `<REL>`, prolonger la hiérarchie : `INTRODD_EXPANSION_REL_ADJ_text`, etc.
 
 ---
 
-#### Exemple: Modifier un attribut
+### Cas 2 : Cibler une occurrence précise d'un mot répété
 
-**Colonne Excel:**
-```
-VDD_type     →  "cognition"
-```
+**Situation :** un paragraphe contient deux occurrences de « Vite ! » et on veut annoter uniquement la deuxième.
 
-**Résultat XML:**
+#### Étape 1 : Créer la colonne
+
+La balise `<ADV>` est enfant direct de `<p>`, donc pas de préfixe parent. Nom de colonne : `ADV_text`.
+
+#### Étape 2 : Renseigner la valeur avec suffixe d'occurrence
+
+Dans la cellule de la colonne `ADV_text`, saisir `Vite !_2`. Le suffixe `_2` est retiré automatiquement : la balise XML contiendra uniquement « Vite ! ».
+
+#### Résultat XML
+
 ```xml
-<VDD type="cognition">dit</VDD>    ← Attribut modifié
+… il s'agissait d'accélérer le mouvement.
+Vite ! <ADV>Vite !</ADV> Sept heures dix…
 ```
+
+La première occurrence reste inchangée, seule la deuxième est balisée.
 
 ---
 
-#### Nommage des colonnes et ordre
+## 7. Vérification d'intégrité
 
-**Syntaxe:**
-```
-[TAG]_[INDEX]_[TAG]_[ATTRIBUTE|_text]
-```
+Après chaque conversion (XML→Excel ou Excel→XML), l'outil effectue automatiquement un contrôle d'intégrité. Le rapport s'affiche dans le journal (GUI) ou la console (CLI).
 
-| Colonne | Signification |
-|---------|---------------|
-| `INTRODD_text` | 1ère INTRODD, texte |
-| `INTRODD_2_text` | 2ème INTRODD, texte |
-| `INTRODD_position` | 1ère INTRODD, attribut "position" |
-| `INTRODD_VDD_type` | VDD imbriquée dans INTRODD, attribut "type" |
-| `INTRODD_2_VDD_3_text` | 3ème VDD dans 2ème INTRODD, texte |
+### Symboles du rapport
 
-**Important:** L'ordre des colonnes dans l'Excel ne change rien. L'ordre final suit le **schéma DTD** (ou préfixé).
+| Symbole | Signification |
+|---|---|
+| `✅ Intégrité confirmée` | Aucune perte, toutes les balises présentes |
+| `✅ OK: N nouveau(x) tag(s)` | Nouvelles balises ajoutées, rien de perdu |
+| `✓ Tag X : N (inchangé)` | Balise X présente en même nombre qu'avant |
+| `✓ Tag X augmenté` | Balise X ajoutée (normal lors d'une annotation) |
+| `➕ Nouveau tag X` | Balise X absente du XML original, nouvellement créée |
+| `⚠️  Tag X réduit` | Nombre de balises X diminué — à vérifier |
+| `❌ Tag X supprimé` | Balise X disparue — problème à corriger |
+| `❌ Problèmes détectés` | Des données ont été perdues — ne pas utiliser ce fichier |
 
----
-
-#### Vérification après reverse
-
-Le script exécute automatiquement un **test d'intégrité reverse** qui vérifie:
-- ✓ Les balises existantes sont préservées
-- ✓ Aucune perte de contenu
-- ✓ Les nouvelles balises sont créées correctement
-- ⚠️ Alertes si des données manquent
+### Exemple de rapport correct (ajout de `<REL>`)
 
 ```
 ▶ Vérification de l'intégrité…
-  ✓ Tag 'p': 516 (inchangé)
-  ✓ Tag 'INTRODD' augmenté (125 → 126)
-  ✓ Tag 'VDD': 498 (inchangé)
-  ➕ Nouveau tag 'zebbi' (1 instance(s))
-  ✅ OK: 1 nouveau(x) tag(s) ajouté(s), aucune perte
+  ✅ OK: 1 nouveau tag ajouté, aucune perte
+  ✓ Tag 'text': 1 (inchangé)
+  ✓ Tag 'p': 343 (inchangé)
+  ✓ Tag 'INTRODD': 134 (inchangé)
+  ✓ Tag 'VDD': 118 (inchangé)
+  ✓ Tag 'PPI': 342 (inchangé)
+  ✓ Tag 'EXPANSION': 35 (inchangé)
+  ➕ Nouveau tag 'REL' (1 instance)
+```
+
+> **Important :** Si le rapport affiche des lignes `❌`, ne pas utiliser le fichier XML produit. Vérifiez les valeurs saisies et relancez la conversion.
+
+---
+
+## 8. Interface graphique (GUI)
+
+```bash
+xml2xlsx-gui
+```
+
+### 8.1 Panneau de gauche : Contrôles
+
+#### Source d'entrée
+
+Trois boutons radio sélectionnent le mode :
+
+- **Dossier** — traitement par lots de tous les `.xml` d'un dossier
+- **Fichier XML** — conversion d'un seul fichier XML
+- **Réécrire XML** — injection des annotations Excel dans le XML source
+
+#### Chemins
+
+Selon le mode sélectionné, le libellé du premier champ change :
+
+- **Dossier XML** — en mode Dossier
+- **Fichier XML** — en mode Fichier XML
+- **Fichier Excel modifié** — en mode Réécrire XML
+
+En mode **Réécrire XML**, le champ **XML original (reverse)** devient actif et obligatoire.
+
+#### Schéma DTD (optionnel)
+
+Permet de charger un fichier `.dtd` externe. Si laissé vide, le schéma PREFAB intégré est utilisé.
+
+#### Options
+
+| Option | Description | Modes actifs |
+|---|---|---|
+| XLSX individuel par fichier | Génère un `.xlsx` par fichier XML traité | Dossier uniquement |
+| Fichier XLSX maître | Génère `master_output.xlsx` consolidant tous les fichiers | Dossier uniquement |
+| Calculer POSITION_INTRODD | Ajoute une colonne `ANTE`/`POST`/`AUTRE` selon position d'INTRODD par rapport à PPI | Tous modes XML→Excel |
+
+### 8.2 Panneau de droite : Journal
+
+Affiche en temps réel le déroulement de la conversion : fichiers traités, résultats de l'intégrité, erreurs éventuelles. Police `Courier` sur fond sombre.
+
+### 8.3 Barre de progression
+
+La barre s'anime pendant la conversion. Le bouton **▶ Lancer** est désactivé pendant le traitement pour éviter les double-exécutions.
+
+---
+
+## 9. Interface en ligne de commande (CLI)
+
+```
+xml2xlsx <entrée> [sortie] [--dtd FICHIER] [--position] [--no-individual] [--reverse XML_ORIGINAL]
+```
+
+### Arguments
+
+| Argument | Obligatoire | Description |
+|---|---|---|
+| `<entrée>` | Oui | Fichier `.xml`, dossier de `.xml`, ou fichier `.xlsx` en mode `--reverse` |
+| `[sortie]` | Non | Chemin du `.xlsx` de sortie (défaut : même nom que l'entrée, ou `master_output.xlsx` pour un dossier) |
+| `--dtd FICHIER` | Non | Chemin vers un fichier DTD pour la détection de schéma |
+| `--position` | Non | Calcule la colonne `POSITION_INTRODD` (`ANTE` / `POST` / `AUTRE`) |
+| `--no-individual` | Non | En mode dossier, ne génère pas les fichiers individuels par XML |
+| `--reverse XML` | Non | Active le mode Réécriture XML : passer le chemin du XML source |
+
+### Exemples complets
+
+#### Fichier unique
+
+```bash
+# Conversion basique
+xml2xlsx corpus.xml
+
+# Avec DTD et nom de sortie personnalisé
+xml2xlsx corpus.xml resultats.xlsx --dtd monschema.dtd
+
+# Avec colonne de position
+xml2xlsx corpus.xml --dtd monschema.dtd --position
+```
+
+#### Dossier
+
+```bash
+# Traitement complet (individuel + maître)
+xml2xlsx /data/corpus/
+
+# Maître uniquement, DTD, positions
+xml2xlsx /data/corpus/ --no-individual --dtd schema.dtd --position
+
+# Maître dans un emplacement spécifique
+xml2xlsx /data/corpus/ /resultats/analyse_complete.xlsx --no-individual
+```
+
+#### Réécriture XML
+
+```bash
+# Injection simple
+xml2xlsx annotations.xlsx --reverse corpus_original.xml
+
+# Avec DTD
+xml2xlsx annotations.xlsx --reverse corpus_original.xml --dtd schema.dtd
 ```
 
 ---
 
-## Résumé
+## 10. Formatage Excel et colorisation
 
-| Fonctionnalité | Avant | Maintenant |
+Le fichier Excel produit est formaté automatiquement :
+
+- **En-têtes** en gras sur fond gris clair
+- **Retour à la ligne automatique** dans toutes les cellules
+- **Largeur des colonnes** calculée automatiquement (max. 100 caractères)
+- **Hauteur des lignes** ajustée au contenu
+- **Colorisation des balises** dans la colonne `paragraph_text`
+
+### Couleurs des balises
+
+| Balise | Couleur | Code hex |
 |---|---|---|
-| Schéma | Préfixé fixe | Lisible depuis DTD ou préfixé |
-| Tags supportés | INTRODD, PPI, VDD... | N'importe quel XML |
-| Validation | Manuelle | Automatique (nombre, contenu) |
-| Modification | Non | Oui (mode reverse) |
-| Intégrité | - | Test avant/après reverse |
+| `INTRODD` | Bleu foncé | `#1F4E79` |
+| `VDD` | Violet | `#7030A0` |
+| `EXPANSION` | Orange foncé | `#C55A11` |
+| `MOD` | Marron | `#833C00` |
+| `PPI` | Rouge foncé | `#C00000` |
+| `NONPPI` | Vert foncé | `#375623` |
+| `MD` | Bleu moyen | `#2E75B6` |
+| `APP` | Gris foncé | `#595959` |
+| `DD` | Turquoise | `#1D6B5E` |
+| Balise inconnue | Noir | `#000000` |
+
+### Colonnes préservées en casse originale
+
+En mode Dossier (fichier maître), les valeurs texte sont normalisées en minuscules, sauf :
+
+- `paragraph_text`
+- `INTRODD_text`
+- `APP_text`
+- `INTRODD_EXPANSION_text`, `INTRODD_EXPANSION_2_text`, `INTRODD_EXPANSION_3_text`
+
+---
+
+## 11. Récapitulatif des modes
+
+| Mode | Entrée | Sortie | CLI | GUI |
+|---|---|---|---|---|
+| Fichier XML unique | Un fichier `.xml` | Un fichier `.xlsx` | `xml2xlsx fichier.xml` | Bouton radio « Fichier XML » |
+| Dossier | Un dossier de `.xml` | XLSX individuels + `master_output.xlsx` | `xml2xlsx dossier/` | Bouton radio « Dossier » |
+| Réécriture XML | Un `.xlsx` + un `.xml` source | `nom_updated.xml` | `xml2xlsx annot.xlsx --reverse source.xml` | Bouton radio « Réécrire XML » |
+
+---
+
+## 12. Dépannage
+
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| `❌ Tag X supprimé` dans le rapport | Modification accidentelle d'une colonne structure | Ne pas modifier `p_id`, `source_file`. Relancer depuis l'Excel original. |
+| Colonne absente dans l'Excel | Balise absente dans tous les paragraphes | Normal : les colonnes vides sont supprimées automatiquement. |
+| Aucun fichier XML trouvé | Dossier vide ou mauvaise extension | Vérifier que les fichiers ont l'extension `.xml` (minuscules). |
+| Valeur non reportée dans le XML | Cellule vide ou valeur non reconnue | Une cellule vide est ignorée. Vérifier la valeur et le nom de colonne. |
+| Mauvaise occurrence balisée | Suffixe `_N` absent ou incorrect | Ajouter `_2` ou `_3` à la fin de la valeur dans la cellule, pas dans le nom de colonne. |
+| Erreur de parsing XML | XML mal formé | Valider le XML source avant de le fournir à l'outil. |
+
+---
+
+## 13. Licence
+
+Ce logiciel est distribué sous licence **MIT**.
+
+*xml2xlsx-lidilem — Convertisseur XML annoté vers Excel pour corpus littéraires PREFAB*
