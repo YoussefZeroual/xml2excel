@@ -72,7 +72,7 @@ def find_mismatch_details(key, df, col_map, xml, tag_counts, attr_counts):
     return messages
 
 
-def check_counts(df, xml_path, schema_path):
+def check_counts(df, xml_path, children_map):
     """
     Verify XML and DataFrame integrity.
     
@@ -80,17 +80,10 @@ def check_counts(df, xml_path, schema_path):
     """
     messages = []
     
-    # Read schema and extract tags
-    try:
-        with open(schema_path,encoding="utf-8") as f:
-            schema = f.read()
-    except (FileNotFoundError, TypeError):
-        # schema_path is None or file doesn't exist
+    if not children_map:
         return messages
-    
-    tags = re.findall(r'<!ELEMENT\s+(\w+)', schema)
-    if "text" in tags:
-        tags.remove("text")
+
+    tags = [t for t in children_map.keys() if t != "text"]
     
     # Read XML
     if xml_path is None:

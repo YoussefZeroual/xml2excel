@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: xml2xlsx-lidilem
-Version: 0.2.8.1
+Version: 0.2.8.6
 Summary: Convertisseur XML annoté vers Excel (corpus littéraires PREFAB)
 License: MIT
 Requires-Python: >=3.8

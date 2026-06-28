@@ -1,9 +1,9 @@
 """
 xml2xlsx.py — Convert annotated XML corpora to Excel.
 
-Tag extraction is driven by the DTD: pass --dtd path/to/schema.dtd to
-automatically discover element hierarchy and attributes. Without --dtd the
-script falls back to the built-in PREFAB schema (legacy behaviour).
+Tag extraction is driven by a DTD schema. Pass --dtd path/to/schema.dtd to
+use an existing DTD, or omit it to have the schema inferred automatically
+from the input XML via xml2dtd.
 """
 
 import pandas as pd
@@ -67,30 +67,6 @@ def parse_dtd(dtd_path):
     return element_children, element_attribs
 
 
-# ---------------------------------------------------------------------------
-# Built-in PREFAB schema (fallback when no DTD supplied)
-# ---------------------------------------------------------------------------
-
-PREFAB_CHILDREN = {
-    'text':     ['p'],
-    'p':        ['INTRODD', 'PPI', 'NONPPI', 'MD', 'APP'],
-    'INTRODD':  ['EXPANSION', 'VDD', 'MOD'],
-    'PPI':      ['MD'],
-    'VDD':      ['EXPANSION'],
-    'NONPPI':   [],
-    'MD':       [],
-    'APP':      [],
-    'MOD':      [],
-    'EXPANSION':[],
-}
-
-PREFAB_ATTRIBS = {
-    'INTRODD':  ['position'],
-    'PPI':      ['decl', 'type', 'position'],
-    'VDD':      ['type', 'lemme'],
-    'EXPANSION':['constr', 'type'],
-}
-
 # Columns whose text must NOT be lowercased
 NO_LOWER = {'INTRODD_text', 'paragraph_text', 'APP_text',
             'INTRODD_EXPANSION_text', 'INTRODD_EXPANSION_2_text',
@@ -98,6 +74,37 @@ NO_LOWER = {'INTRODD_text', 'paragraph_text', 'APP_text',
 
 # Tags serialised inline in paragraph_text
 SERIALIZE_SKIP = {'p'}
+
+
+# ---------------------------------------------------------------------------
+# Schema inference via xml2dtd
+# ---------------------------------------------------------------------------
+
+def infer_schema_from_xml(xml_path):
+    """
+    Infer children_map and attribs_map directly from an XML file using the
+    same analysis logic as xml2dtd.py, without writing a DTD to disk.
+    Returns (children_map, attribs_map) in the same format as parse_dtd().
+    """
+    import tempfile, os
+    from xml2xlsx.xml2dtd import generate_dtd
+    from lxml import etree as _etree
+
+    parser = _etree.XMLParser(load_dtd=False, resolve_entities=False)
+    tree = _etree.parse(xml_path, parser)
+    dtd_text = generate_dtd(tree)
+
+    # Write to a temp file and reuse parse_dtd()
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.dtd',
+                                     encoding='utf-8', delete=False) as tmp:
+        tmp.write(dtd_text)
+        tmp_path = tmp.name
+    try:
+        children_map, attribs_map = parse_dtd(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+
+    return children_map, attribs_map
 
 
 # ---------------------------------------------------------------------------
@@ -519,8 +526,16 @@ def main():
         children_map, attribs_map = parse_dtd(args.dtd)
         print(f"[schema] Loaded DTD: {args.dtd}")
     else:
-        children_map, attribs_map = PREFAB_CHILDREN, PREFAB_ATTRIBS
-        print("[schema] Using built-in PREFAB schema")
+        # Infer schema from the input XML (or the first XML file in a folder)
+        probe = (args.input if os.path.isfile(args.input)
+                 else next((os.path.join(args.input, f)
+                            for f in sorted(os.listdir(args.input))
+                            if f.endswith('.xml')), None))
+        if probe is None:
+            print("No XML file found to infer schema from.")
+            sys.exit(1)
+        children_map, attribs_map = infer_schema_from_xml(probe)
+        print(f"[schema] Inferred from: {probe}")
 
     p_children = children_map.get('p', [])
 
@@ -552,7 +567,7 @@ def main():
                     lambda v: v.lower() if isinstance(v, str) else v))
         df = reorder_columns(df, p_children)
         from xml2xlsx.integrity_check import check_counts
-        check_counts(df, xml_path, args.dtd)
+        check_counts(df, xml_path, children_map)
         format_excel(df, df_path, p_children)
         print(f"  Saved: {df_path}")
         return df

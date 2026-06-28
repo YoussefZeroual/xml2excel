@@ -205,8 +205,8 @@ class App(tk.Tk):
     def _process(self, path):
         try:
             from xml2xlsx.xml2xlsx import (
-                parse_dtd, extract_paragraphs, reorder_columns,
-                PREFAB_CHILDREN, PREFAB_ATTRIBS, NO_LOWER, xlsx2xml
+                parse_dtd, infer_schema_from_xml, extract_paragraphs,
+                reorder_columns, NO_LOWER, xlsx2xml
             )
             from xml2xlsx.format_excel import format_excel
             import pandas as pd
@@ -220,8 +220,16 @@ class App(tk.Tk):
                 children_map, attribs_map = parse_dtd(dtd_path)
                 self._log(f"[schema] DTD chargé : {dtd_path}")
             else:
-                children_map, attribs_map = PREFAB_CHILDREN, PREFAB_ATTRIBS
-                self._log("[schema] Schéma PREFAB intégré")
+                if mode == "reverse":
+                    probe = self.original_xml_var.get().strip() or None
+                elif os.path.isfile(path) and path.endswith('.xml'):
+                    probe = path
+                else:
+                    probe = next((os.path.join(path, f)
+                                  for f in sorted(os.listdir(path))
+                                  if f.endswith('.xml')), None)
+                children_map, attribs_map = infer_schema_from_xml(probe)
+                self._log(f"[schema] Schéma inféré depuis : {os.path.basename(probe)}")
 
             p_children = children_map.get('p', [])
 
@@ -238,7 +246,7 @@ class App(tk.Tk):
                 
                 # Integrity check - capture messages for GUI log
                 from xml2xlsx.integrity_check import check_counts
-                messages = check_counts(df, xml_path, dtd_path)
+                messages = check_counts(df, xml_path, children_map)
                 for msg in messages:
                     self._log(f"    {msg}")
                 

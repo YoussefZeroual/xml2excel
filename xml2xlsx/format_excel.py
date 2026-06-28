@@ -140,6 +140,7 @@ def format_excel(df, filename, p_children=None, tag_colors=None,
     rich_cols = rich_text_columns or RICH_TEXT_COLUMNS
 
     # Clean up column names
+    df.columns = df.columns.astype(str)
     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
     df = df.reset_index(drop=True)
 
