@@ -81,25 +81,21 @@ def check_reverse_integrity(original_xml_path, updated_xml_path, children_map):
     def normalize_text(t):
         return ' '.join(t.replace('\u2019', "'").replace('\u2018', "'").split())
 
-    full_xml_text = normalize_text(' '.join(
-        ' '.join(p.itertext())
-        for p in upd_root.iter('p')
-    ))
+    full_xml_text = normalize_text(''.join(
+    ''.join(p.itertext())
+    for p in upd_root.iter('p')
+))
 
     deleted_text = set()
     for text in orig_text - upd_text:
         normalized = normalize_text(text)
-        
-        for text in orig_text - upd_text:
-            normalized = normalize_text(text)
-            print(f"DEBUG normalized repr: {repr(normalized[:100])}")
-            idx = full_xml_text.find(normalized[:40])
-            print(f"DEBUG full_xml repr at idx: {repr(full_xml_text[idx:idx+100]) if idx >= 0 else 'NOT FOUND'}")
-    if normalized not in full_xml_text:
-        deleted_text.add(text)
-        
-        
-        if normalized not in full_xml_text:
+        idx = full_xml_text.find(normalized[:40])
+        if not (normalized in full_xml_text):
+            idx2 = full_xml_text.find(normalized[:40])
+            if idx2 >= 0:
+                for i, (a, b) in enumerate(zip(normalized, full_xml_text[idx2:idx2+len(normalized)])):
+                    if a != b:
+                        break
             deleted_text.add(text)
 
     if deleted_text:
