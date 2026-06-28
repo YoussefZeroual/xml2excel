@@ -80,21 +80,87 @@ SERIALIZE_SKIP = {'p'}
 # Schema inference via xml2dtd
 # ---------------------------------------------------------------------------
 
-def infer_schema_from_xml(xml_path):
+def infer_schema_from_xml(xml_paths):
     """
-    Infer children_map and attribs_map directly from an XML file using the
+    Infer children_map and attribs_map from one or more XML files using the
     same analysis logic as xml2dtd.py, without writing a DTD to disk.
+    Accepts a single path or a list of paths; merges analysis across all files
+    so that attributes only present in some files are not missed.
     Returns (children_map, attribs_map) in the same format as parse_dtd().
     """
     import tempfile, os
-    from xml2xlsx.xml2dtd import generate_dtd
+    from collections import defaultdict
+    from xml2xlsx.xml2dtd import analyze, generate_dtd, local
     from lxml import etree as _etree
 
-    parser = _etree.XMLParser(load_dtd=False, resolve_entities=False)
-    tree = _etree.parse(xml_path, parser)
-    dtd_text = generate_dtd(tree)
+    if isinstance(xml_paths, str):
+        xml_paths = [xml_paths]
 
-    # Write to a temp file and reuse parse_dtd()
+    parser = _etree.XMLParser(load_dtd=False, resolve_entities=False)
+
+    # Merged accumulators
+    merged_children   = defaultdict(list)
+    merged_child_sets = defaultdict(set)
+    merged_attrs      = defaultdict(dict)
+    merged_has_text   = defaultdict(bool)
+    merged_counts     = defaultdict(lambda: defaultdict(int))
+
+    for xml_path in xml_paths:
+        tree = _etree.parse(xml_path, parser)
+        children, attrs, has_text, child_counts = analyze(tree)
+
+        for tag, kids in children.items():
+            for kid in kids:
+                if kid not in merged_child_sets[tag]:
+                    merged_child_sets[tag].add(kid)
+                    merged_children[tag].append(kid)
+
+        for tag, attr_dict in attrs.items():
+            for attr, values in attr_dict.items():
+                if attr not in merged_attrs[tag]:
+                    merged_attrs[tag][attr] = set()
+                merged_attrs[tag][attr].update(values)
+
+        for tag, val in has_text.items():
+            merged_has_text[tag] = merged_has_text[tag] or val
+
+        for tag, counts in child_counts.items():
+            for child, cnt in counts.items():
+                if cnt > merged_counts[tag][child]:
+                    merged_counts[tag][child] = cnt
+
+    # Build a fake single-tree DTD text from merged data, then parse it
+    from xml2xlsx.xml2dtd import content_model, attr_type
+
+    # BFS from root (first tag seen in first file)
+    first_tree = _etree.parse(xml_paths[0], parser)
+    root_tag = local(first_tree.getroot().tag)
+    visited, seen, queue = [], set(), [root_tag]
+    while queue:
+        tag = queue.pop(0)
+        if tag in seen:
+            continue
+        seen.add(tag)
+        visited.append(tag)
+        for child in merged_children.get(tag, []):
+            if child not in seen:
+                queue.append(child)
+
+    lines = []
+    for tag in visited:
+        model = content_model(tag, merged_children, merged_has_text, merged_counts)
+        lines.append(f"<!ELEMENT {tag} {model}>")
+        tag_attrs = merged_attrs.get(tag, {})
+        if tag_attrs:
+            lines.append(f"<!ATTLIST {tag}")
+            for attr, values in sorted(tag_attrs.items()):
+                atype = attr_type(values)
+                default = f'"{next(iter(values))}"' if len(values) == 1 else "#IMPLIED"
+                lines.append(f"  {attr:<20} {atype:<30} {default}")
+            lines[-1] += ">"
+            lines.append("")
+    dtd_text = "\n".join(lines)
+
     with tempfile.NamedTemporaryFile(mode='w', suffix='.dtd',
                                      encoding='utf-8', delete=False) as tmp:
         tmp.write(dtd_text)
@@ -527,15 +593,17 @@ def main():
         print(f"[schema] Loaded DTD: {args.dtd}")
     else:
         # Infer schema from the input XML (or the first XML file in a folder)
-        probe = (args.input if os.path.isfile(args.input)
-                 else next((os.path.join(args.input, f)
-                            for f in sorted(os.listdir(args.input))
-                            if f.endswith('.xml')), None))
-        if probe is None:
+        if os.path.isfile(args.input):
+            probe = [args.input]
+        else:
+            probe = [os.path.join(args.input, f)
+                     for f in sorted(os.listdir(args.input))
+                     if f.endswith('.xml')]
+        if not probe:
             print("No XML file found to infer schema from.")
             sys.exit(1)
         children_map, attribs_map = infer_schema_from_xml(probe)
-        print(f"[schema] Inferred from: {probe}")
+        print(f"[schema] Inferred from {len(probe)} file(s)")
 
     p_children = children_map.get('p', [])
 

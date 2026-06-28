@@ -222,14 +222,15 @@ class App(tk.Tk):
             else:
                 if mode == "reverse":
                     probe = self.original_xml_var.get().strip() or None
+                    probe = [probe] if probe else []
                 elif os.path.isfile(path) and path.endswith('.xml'):
-                    probe = path
+                    probe = [path]
                 else:
-                    probe = next((os.path.join(path, f)
-                                  for f in sorted(os.listdir(path))
-                                  if f.endswith('.xml')), None)
+                    probe = [os.path.join(path, f)
+                             for f in sorted(os.listdir(path))
+                             if f.endswith('.xml')]
                 children_map, attribs_map = infer_schema_from_xml(probe)
-                self._log(f"[schema] Schéma inféré depuis : {os.path.basename(probe)}")
+                self._log(f"[schema] Schéma inféré depuis {len(probe)} fichier(s)")
 
             p_children = children_map.get('p', [])
 
