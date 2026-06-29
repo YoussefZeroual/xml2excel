@@ -345,7 +345,7 @@ def parse_column_name(col_name):
         if tag.isdigit():
             # This is an index for the previous tag
             if path:
-                indices[path[-1]] = int(tag)
+                indices[path[-1]] = int(tag) - 1  # column suffix is 1-based, index is 0-based
             i += 1
         else:
             path.append(tag)
@@ -376,10 +376,28 @@ def wrap_text_in_tag(parent_elem, new_tag, search_text, occurrence=0):
         if elem.text:
             nodes.append(("text", elem, None))
         for i, child in enumerate(elem):
+            if child.text:
+                nodes.append(("child_text", elem, i))
             if child.tail:
                 nodes.append(("tail", elem, i))
         return nodes
+    # First pass: count matches already wrapped in child elements
     for node_type, holder, child_idx in text_nodes(parent_elem):
+        if node_type != "child_text":
+            continue
+        text = normalize_ws(holder[child_idx].text)
+        text_lower = text.lower()
+        start = 0
+        while True:
+            m = re.search(r'(?<!\S)' + re.escape(search_lower), text_lower[start:])
+            if m is None:
+                break
+            match_count += 1
+            start += m.start() + 1
+    # Second pass: wrap in bare text/tail nodes
+    for node_type, holder, child_idx in text_nodes(parent_elem):
+        if node_type == "child_text":
+            continue
         if node_type == "text":
             text = normalize_ws(holder.text)
         else:
@@ -479,7 +497,7 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                 if len(matches) > target_index:
                     elem = matches[target_index]
                     elem_was_created = False
-                elif len(matches) > 0:
+                elif len(matches) > 0 and target_index == 0:
                     elem = matches[-1]
                     elem_was_created = False
                 else:
@@ -528,6 +546,13 @@ def xlsx2xml(excel_path, xml_path, output_path, children_map):
                             current.text = value_str
                         continue
                     else:
+                        # Check if already wrapped at this occurrence (unchanged xlsx round-trip)
+                        existing = [c for c in parent_of_current if c.tag == current.tag
+                                    and c.text and ' '.join(c.text.split()).lower() == ' '.join(value_str.split()).lower()]
+                        if len(existing) > occurrence:
+                            if elem_was_created and current in list(parent_of_current):
+                                parent_of_current.remove(current)
+                            continue
                         wrapped = wrap_text_in_tag(parent_of_current, current.tag, value_str, occurrence)
                 
                 

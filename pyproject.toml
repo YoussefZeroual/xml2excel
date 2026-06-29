@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xml2xlsx-lidilem"
-version = "0.3.0.1"
+version = "0.3.0.2"
 description = "Convertisseur XML annoté vers Excel (corpus littéraires PREFAB)"
 readme = "README.md"
 requires-python = ">=3.8"
